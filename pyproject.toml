@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0.0,<82.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-neural-feed"
+version = "0.1.0"
+description = "A Django AI library for generating personalized content recommendation feeds based on pgvector."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Dersty" }
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Django",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 6.0",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "Django>=5.0",
+    "pgvector>=0.2.0",
+    "torch>=2.2.0,<2.7.0",
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/itsdersty/django-neural-feed"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+python_files = ["test_*.py", "*_test.py"]
