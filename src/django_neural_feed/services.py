@@ -3,7 +3,6 @@ from django.contrib.contenttypes.models import ContentType
 from pgvector.django import CosineDistance
 
 from django_neural_feed.conf import app_settings
-from django_neural_feed.models import UserDislike
 
 
 class RecommendationService:
@@ -14,7 +13,6 @@ class RecommendationService:
         """Lazy AI model initialization.
         """
         if cls._model_instance is None:
-            pass
             from sentence_transformers import SentenceTransformer
             cls._model_instance = SentenceTransformer(app_settings.MODEL_NAME)
         return cls._model_instance
@@ -43,6 +41,7 @@ class RecommendationService:
     def get_feed_for_user(cls, user, model_class, queryset, likes_queryset, limit: int = 20):
         """Main feed generation function
         """
+        """
         # getting list of disliked objects for user
         disliked_ids = UserDislike.objects.filter(
             user=user,
@@ -50,13 +49,24 @@ class RecommendationService:
         ).values_list('object_id', flat=True)
 
         # removing disliked posts from search
-        queryset = queryset.exclude(id__in=disliked_ids)
+        queryset = queryset.exclude(id__in=disliked_ids) """
         
         user_profile_vector = cls.calculate_user_embedding(likes_queryset, limit)
 
         if user_profile_vector is None:
             return queryset.order_by('-id')[:limit]
 
+        """ TODO:
+        We have:
+            "WEIGHT_SIMILARITY": 0.6, 60%
+            "WEIGHT_FRESHNESS": 0.2, 20%
+            "WEIGHT_POPULARITY": 0.2, 20%
+
+        For example: from 10 recomended videos we will get:
+        6 videos about topic we interested in,
+        2 videos that was posted recently (we need somehow filter shit content but idk how lol)
+        And 2 viral videos
+        """
         queryset = queryset.annotate(
             distance=CosineDistance('embedding', user_profile_vector)
         ).order_by('distance')
