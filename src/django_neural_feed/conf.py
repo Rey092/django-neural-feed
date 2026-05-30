@@ -3,6 +3,7 @@ from django.db.models import F, Case, When, Value, FloatField, ExpressionWrapper
 from django.db.models.functions import Ln, Cast
 from django.utils import timezone
 from datetime import timedelta
+from .exceptions import ImproperlyConfigured
 
 # If developer didn't specify configs, we put default ones.
 DEFAULT_CONFIG = {
@@ -64,12 +65,18 @@ class AppSettings:
     @property
     def FRESHNESS_EXPRESSION(self):
         expr = self._user_config.get("FRESHNESS_EXPRESSION") # Django ORM expression for calculating freshness score (0-1)
-        return expr if expr is not None else get_default_freshness_expression()
+        if expr is not None:
+            return expr
+        else:
+            raise ImproperlyConfigured("FRESHNESS_EXPRESSION wasn't configured!")
 
     @property
     def POPULARITY_EXPRESSION(self):
         expr = self._user_config.get("POPULARITY_EXPRESSION") # Django ORM expression for calculating popularity score
-        return expr if expr is not None else get_default_popularity_expression()
+        if expr is not None:
+            return expr
+        else:
+            raise ImproperlyConfigured("POPULARITY_EXPRESSION wasn't configured!")
     
     
 app_settings = AppSettings()
