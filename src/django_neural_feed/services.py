@@ -56,21 +56,9 @@ class RecommendationService:
 
         if user_profile_vector is None:
             return queryset.order_by('-id')[:limit]
-
-        """ TODO:
-        We have:
-            "WEIGHT_SIMILARITY": 0.6, 60%
-            "WEIGHT_FRESHNESS": 0.2, 20%
-            "WEIGHT_POPULARITY": 0.2, 20%
-
-        For example: from 10 recomended videos we will get:
-        6 videos about topic we interested in,
-        2 videos that was posted recently
-        And 2 viral videos
-        """
         
         queryset = queryset.annotate(
-            distance=CosineDistance('embedding', user_profile_vector),
+            distance=1-CosineDistance('embedding', user_profile_vector),
             popularity=app_settings.POPULARITY_EXPRESSION,
             freshness=app_settings.FRESHNESS_EXPRESSION,
         )
