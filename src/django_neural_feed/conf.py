@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db.models import F, Case, When, Value, FloatField, ExpressionWrapper
+from django.db.models.functions import Ln, Cast
 from django.utils import timezone
 from datetime import timedelta
 
@@ -24,14 +25,12 @@ def get_default_freshness_expression():
             ),
             output_field=FloatField(),
             default=Value(0.0)
-        ),
+        )
 
 def get_default_popularity_expression():
     """Returns popularity expression."""
-    return ExpressionWrapper(
-        F('likes_count') + F('comments_count') * 2,
-        output_field=FloatField()
-    )
+    raw_score = F('likes_count') + F('comments_count') * 2
+    return Ln(Cast(raw_score, FloatField()) + 1.0)
 
 class AppSettings:
     """Middle class for safe access to lib's functions."""

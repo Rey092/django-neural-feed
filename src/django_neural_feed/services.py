@@ -1,6 +1,7 @@
 import numpy as np
 from django.contrib.contenttypes.models import ContentType
 from pgvector.django import CosineDistance
+from django.db.models import F
 
 from django_neural_feed.conf import app_settings
 
@@ -64,11 +65,20 @@ class RecommendationService:
 
         For example: from 10 recomended videos we will get:
         6 videos about topic we interested in,
-        2 videos that was posted recently (we need somehow filter shit content but idk how lol)
+        2 videos that was posted recently
         And 2 viral videos
         """
+        
         queryset = queryset.annotate(
-            distance=CosineDistance('embedding', user_profile_vector)
-        ).order_by('distance')
+            distance=CosineDistance('embedding', user_profile_vector),
+            popularity=app_settings.POPULARITY_EXPRESSION,
+            freshness=app_settings.FRESHNESS_EXPRESSION,
+        )
+
+        queryset = queryset.annotate(
+            score=app_settings.WEIGHT_SIMILARITY * F('distance') + 
+                app_settings.WEIGHT_FRESHNESS * F('freshness') +
+                app_settings.WEIGHT_POPULARITY * F('popularity')
+        ).order_by('score')
 
         return queryset[:limit]
