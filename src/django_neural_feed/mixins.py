@@ -23,3 +23,6 @@ class NeuralUserMixin(models.Model):
     neural_vector = VectorField(
         dimensions=app_settings.VECTOR_DIMENSION, null=True, blank=True
     )
+
+    class Meta:
+        abstract = True
