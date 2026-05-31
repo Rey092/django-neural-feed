@@ -26,15 +26,16 @@ def generate_content_embedding(sender, instance, created, **kwargs):
             try:
                 from celery import Task
                 from .tasks import generate_content_embedding_task
-                
+
                 model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
-                celery_task:Task = generate_content_embedding_task # type: ignore
+                celery_task: Task = generate_content_embedding_task  # type: ignore
 
                 celery_task.delay(instance.id, model_path)
                 return
-                
+
             except (ImportError, ModuleNotFoundError):
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.warning(
                     "DNF Config: CELERY_ENABLED is True, but celery is not installed! "

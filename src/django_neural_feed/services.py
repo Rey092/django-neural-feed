@@ -5,6 +5,7 @@ from django.db.models import F
 
 from django_neural_feed.conf import app_settings
 
+
 class RecommendationService:
     _model_instance = None
 
