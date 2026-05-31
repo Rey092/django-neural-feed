@@ -1,83 +1,84 @@
 from django.conf import settings
-from django.db.models import F, Case, When, Value, FloatField, ExpressionWrapper
-from django.db.models.functions import Ln, Cast
-from django.utils import timezone
-from datetime import timedelta
+from django.db.models import Value
 from .exceptions import ImproperlyConfigured
 
-# If developer didn't specify configs, we put default ones.
+# Fallback defaults if the developer skips these keys in settings.py
 DEFAULT_CONFIG = {
     "MODEL_NAME": "intfloat/multilingual-e5-small",
     "VECTOR_DIMENSION": 384,
     "WEIGHT_SIMILARITY": 0.6,
     "WEIGHT_FRESHNESS": 0.2,
     "WEIGHT_POPULARITY": 0.2,
+    "USER_LIKES_LIMIT": 20,
     "CELERY_ENABLED": False,
 }
 
 
 class AppSettings:
-    """Middle class for safe access to lib's functions."""
+    """
+    Thread-safe configuration proxy for Django Neural Feed (DNF).
+    Provides default fallbacks and clean property accessors.
+    """
 
     def __init__(self):
-        self._user_config = getattr(settings, "NEURAL_FEED_CONFIG", {})
+        # Using a unified short prefix 'DNF_CONFIG' to match the official documentation
+        self._user_config = getattr(settings, "DNF_CONFIG", {})
 
     def _get_setting(self, key):
+        """Internal helper to resolve user configurations with built-in fallbacks."""
         return self._user_config.get(key, DEFAULT_CONFIG[key])
 
     @property
     def MODEL_NAME(self) -> str:
-        return self._get_setting(
-            "MODEL_NAME"
-        )  # HuggingFace model for text vectorization
+        """The HuggingFace text-embedding-inference or sentence-transformer model name."""
+        return self._get_setting("MODEL_NAME")
 
     @property
     def VECTOR_DIMENSION(self) -> int:
-        return self._get_setting(
-            "VECTOR_DIMENSION"
-        )  # Size of the embedding vector (e.g., 384 for E5-small)
+        """The dimension size of generated dense vectors (e.g., 384 for E5-small)."""
+        return self._get_setting("VECTOR_DIMENSION")
 
     @property
     def WEIGHT_SIMILARITY(self) -> float:
-        return self._get_setting(
-            "WEIGHT_SIMILARITY"
-        )  # Importance of semantic match with user interests in scoring formula
+        """The weight multiplier for the semantic similarity score (cosine distance)."""
+        return self._get_setting("WEIGHT_SIMILARITY")
 
     @property
     def WEIGHT_FRESHNESS(self) -> float:
-        return self._get_setting(
-            "WEIGHT_FRESHNESS"
-        )  # Importance of post creation time (recency) in scoring formula
+        """The weight multiplier for the content recency/freshness score."""
+        return self._get_setting("WEIGHT_FRESHNESS")
 
     @property
     def WEIGHT_POPULARITY(self) -> float:
-        return self._get_setting(
-            "WEIGHT_POPULARITY"
-        )  # Importance of post engagement (likes/views) in scoring formula
+        """The weight multiplier for the content popularity/engagement score."""
+        return self._get_setting("WEIGHT_POPULARITY")
 
     @property
     def FRESHNESS_EXPRESSION(self):
-        expr = self._user_config.get(
-            "FRESHNESS_EXPRESSION"
-        )  # Django ORM expression for calculating freshness score (0-1)
-        if expr is not None:
-            return expr
-        else:
-            raise ImproperlyConfigured("FRESHNESS_EXPRESSION wasn't configured!")
+        """
+        Django ORM expression or database function for calculating the freshness metric.
+        Defaults to a neutral constant Value(1.0) to avoid hard crashes during quickstart.
+        """
+        return self._user_config.get("FRESHNESS_EXPRESSION", Value(1.0))
 
     @property
     def POPULARITY_EXPRESSION(self):
-        expr = self._user_config.get(
-            "POPULARITY_EXPRESSION"
-        )  # Django ORM expression for calculating popularity score
-        if expr is not None:
-            return expr
-        else:
-            raise ImproperlyConfigured("POPULARITY_EXPRESSION wasn't configured!")
+        """
+        Django ORM expression or database function for calculating the popularity metric.
+        Defaults to a neutral constant Value(1.0) to avoid hard crashes during quickstart.
+        """
+        return self._user_config.get("POPULARITY_EXPRESSION", Value(1.0))
+
+    @property
+    def USER_LIKES_LIMIT(self) -> int:
+        """The maximum number of recent active likes sliced to build a user vector profile."""
+        return self._get_setting("USER_LIKES_LIMIT")
 
     @property
     def CELERY_ENABLED(self) -> bool:
-        return self._get_setting("CELERY_ENABLED")  # Are we using Celery?
+        """Flag toggling background task delegation for embedding generation pipelines."""
+        return self._get_setting("CELERY_ENABLED")
 
 
+# Global instantiation for direct import across the library ecosystem
 app_settings = AppSettings()
