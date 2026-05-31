@@ -1,12 +1,16 @@
 from django.db import models
 from pgvector.django import VectorField
-
 from django_neural_feed.conf import app_settings
 
 
 class NeuralRecommendMixin(models.Model):
-    """Mixin for recommendable items"""
+    """
+    Abstract mixin for content models (e.g., Post, Article, Product)
+    that require semantic vector representation.
+    """
 
+    # NOTE: Changing VECTOR_DIMENSION in settings requires generating
+    # a new Django migration in the host project to alter the database column.
     embedding = VectorField(
         dimensions=app_settings.VECTOR_DIMENSION, null=True, blank=True
     )
@@ -15,12 +19,20 @@ class NeuralRecommendMixin(models.Model):
         abstract = True
 
     def get_ready_text(self) -> str:
-        """String interpretation of model. (e.g. for post it's a text)"""
+        """
+        Must be implemented by the target model. Should return a combined
+        string of all text fields intended for vectorization.
+        """
         raise NotImplementedError("You should assign get_ready_text() in your model!")
 
 
 class NeuralUserMixin(models.Model):
-    neural_vector = VectorField(
+    """
+    Abstract mixin for the User model to store the aggregated
+    interest profile vector.
+    """
+
+    user_embedding = VectorField(
         dimensions=app_settings.VECTOR_DIMENSION, null=True, blank=True
     )
 
