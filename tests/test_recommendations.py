@@ -43,5 +43,5 @@ def test_calculate_user_embedding_calculates_mean_correctly(mocker):
         vector_3,
     ]
 
-    result = RecommendationService.calculate_user_embedding(mock_queryset, limit=3)
+    result = RecommendationService.calculate_user_embedding(mock_queryset)
     assert result == expected_mean
