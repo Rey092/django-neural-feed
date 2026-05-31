@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "WEIGHT_SIMILARITY": 0.6,
     "WEIGHT_FRESHNESS": 0.2,
     "WEIGHT_POPULARITY": 0.2,
+    "CELERY_ENABLED": False,
 }
 
 
@@ -73,6 +74,10 @@ class AppSettings:
             return expr
         else:
             raise ImproperlyConfigured("POPULARITY_EXPRESSION wasn't configured!")
+
+    @property
+    def CELERY_ENABLED(self) -> bool:
+        return self._get_setting("CELERY_ENABLED")  # Are we using Celery?
 
 
 app_settings = AppSettings()

@@ -1,6 +1,7 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django_neural_feed.mixins import NeuralRecommendMixin
+from django_neural_feed.conf import app_settings
 
 
 @receiver(post_save)
@@ -21,6 +22,26 @@ def generate_content_embedding(sender, instance, created, **kwargs):
     )  # If post just got created, or we didn't put embedding, we should generate embedding!
 
     if should_generate:
+        if app_settings.CELERY_ENABLED:
+            try:
+                from celery import Task
+                from .tasks import generate_content_embedding_task
+
+                model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
+                celery_task: Task = generate_content_embedding_task  # type: ignore
+
+                celery_task.delay(instance.id, model_path)
+                return
+
+            except (ImportError, ModuleNotFoundError):
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "DNF Config: CELERY_ENABLED is True, but celery is not installed! "
+                    "Falling back to synchronous embedding generation."
+                )
+
         try:
             text_to_vectorize = (
                 instance.get_ready_text()

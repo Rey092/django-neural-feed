@@ -40,3 +40,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
 python_files = ["test_*.py", "*_test.py"]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+norecursedirs = [".venv", "dist", "build", "migrations"]
