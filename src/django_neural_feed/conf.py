@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db.models import Value
-from .exceptions import ImproperlyConfigured
 
 # Fallback defaults if the developer skips these keys in settings.py
 DEFAULT_CONFIG = {

@@ -19,6 +19,9 @@ class TestM2MPost(NeuralRecommendMixin, models.Model):
     title = models.CharField(max_length=100)
     likes = models.ManyToManyField(related_name="liked_m2m_posts", to=TestUser)
 
+    def get_ready_text(self) -> str:
+        return self.title
+
 
 class TestUserAction(models.Model):
     user = models.ForeignKey(TestUser, on_delete=models.CASCADE)
