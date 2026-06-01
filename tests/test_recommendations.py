@@ -72,13 +72,17 @@ def test_calculate_user_embedding_with_real_db(mocker):
 
     user = User.objects.create_user(username="db_tester", password="password123")
 
-    post1 = TestPost.objects.create(title="P1", embedding=[1.0, 2.0, 3.0])
-    post2 = TestPost.objects.create(title="P2", embedding=[2.0, 4.0, 6.0])
-    post3 = TestPost.objects.create(title="P3", embedding=[3.0, 6.0, 9.0])
+    posts = TestPost.objects.bulk_create(
+        [
+            TestPost(title="P1", embedding=[1.0, 2.0, 3.0]),
+            TestPost(title="P2", embedding=[2.0, 4.0, 6.0]),
+            TestPost(title="P3", embedding=[3.0, 6.0, 9.0]),
+        ]
+    )
 
-    TestUserAction.objects.create(user=user, post=post1, action_type="like")
-    TestUserAction.objects.create(user=user, post=post2, action_type="like")
-    TestUserAction.objects.create(user=user, post=post3, action_type="like")
+    TestUserAction.objects.create(user=user, post=posts[0], action_type="like")
+    TestUserAction.objects.create(user=user, post=posts[1], action_type="like")
+    TestUserAction.objects.create(user=user, post=posts[2], action_type="like")
 
     queryset = TestUserAction.objects.filter(user=user, action_type="like")
     result = RecommendationService.calculate_user_embedding(
@@ -119,13 +123,17 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
     user = User.objects.create_user(username="feed_tester", password="password123")
 
-    post_closest = TestPost.objects.create(
-        title="Close Match", embedding=[0.9, 0.1, 0.0]
+    # ИСПОЛЬЗУЕМ bulk_create для гарантии, что векторы не будут перезаписаны
+    posts = TestPost.objects.bulk_create(
+        [
+            TestPost(title="Close Match", embedding=[0.9, 0.1, 0.0]),
+            TestPost(title="Far Match", embedding=[0.0, 0.1, 0.9]),
+            TestPost(title="Disliked Item", embedding=[0.8, 0.0, 0.1]),
+        ]
     )
-    post_far = TestPost.objects.create(title="Far Match", embedding=[0.0, 0.1, 0.9])
-    post_disliked = TestPost.objects.create(
-        title="Disliked Item", embedding=[0.8, 0.0, 0.1]
-    )
+
+    # Распаковываем созданные посты (PostgreSQL с bulk_create корректно возвращает ID)
+    post_closest, post_far, post_disliked = posts
 
     mocker.patch.object(
         RecommendationService, "calculate_user_embedding", return_value=[1.0, 0.0, 0.0]
