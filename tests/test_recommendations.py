@@ -127,10 +127,10 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
     post_closest, post_far, post_disliked = posts
 
-    user.user_embedding = [1.0, 0.0, 0.0] #type:ignore
+    user.user_embedding = [1.0, 0.0, 0.0]  # type: ignore
     user.save(update_fields=["user_embedding"])
 
-    print("DEBUG. User embedding is",user.user_embedding) #type: ignore
+    print("DEBUG. User embedding is", user.user_embedding)  # type: ignore
 
     feed = RecommendationService.get_feed_for_user(
         user=user,
