@@ -114,9 +114,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     )
 
     mocker.patch("sentence_transformers.SentenceTransformer")
-    mocker.patch.object(
-        RecommendationService, "calculate_embedding", return_value=[0.0, 0.0, 0.0]
-    )
 
     user = User.objects.create_user(username="feed_tester", password="password123")
 
@@ -130,9 +127,10 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
     post_closest, post_far, post_disliked = posts
 
-    mocker.patch.object(
-        RecommendationService, "calculate_user_embedding", return_value=[1.0, 0.0, 0.0]
-    )
+    user.user_embedding = [1.0, 0.0, 0.0]  # type: ignore
+    user.save(update_fields=["user_embedding"])
+
+    print("DEBUG. User embedding is", user.user_embedding)  # type: ignore
 
     feed = RecommendationService.get_feed_for_user(
         user=user,
@@ -142,6 +140,13 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
         excluded_ids=[post_disliked.id],  # type: ignore
         limit=10,
     )
+
+    for p in feed:
+        print(
+            p.title,
+            p.similarity,
+            p.score,
+        )
 
     assert feed.count() == 2
     assert feed[0].id == post_closest.id  # type: ignore

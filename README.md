@@ -116,8 +116,8 @@ DNF_CONFIG = {
 | `WEIGHT_SIMILARITY` | `0.6` | Scoring multiplier for semantic vector similarity. |
 | `WEIGHT_FRESHNESS` | `0.2` | Scoring multiplier for content freshness. |
 | `WEIGHT_POPULARITY` | `0.2` | Scoring multiplier for content popularity. |
-| `POPULARITY_EXPRESSION` | `Value(1.0)` | Django F-expression or database function used to get popularity values. Defaults to a neutral constant. |
-| `FRESHNESS_EXPRESSION` | `Value(1.0)` | SQL expression or Django expression for the time-decay factor. Defaults to a neutral constant. |
+| `POPULARITY_EXPRESSION` | `Value(0.0)` | Django F-expression or database function used to get popularity values. Defaults to a neutral constant. |
+| `FRESHNESS_EXPRESSION` | `Value(0.0)` | SQL expression or Django expression for the time-decay factor. Defaults to a neutral constant. |
 
 ## **License**
 
