@@ -96,38 +96,21 @@ def test_calculate_user_embedding_with_real_db(mocker):
 @pytest.mark.django_db
 def test_get_feed_for_user_sorting_and_filtering(mocker):
     """Verify pgvector distance sorting and exclusion logic in database query."""
+    from django.db.models import Value
     from django_neural_feed.conf import app_settings
+    from django_neural_feed.services import RecommendationService
 
+    # Replace the PropertyMock mess by directly patching the instance's config dict
     mocker.patch.object(
-        type(app_settings),
-        "WEIGHT_SIMILARITY",
-        new_callable=mocker.PropertyMock,
-        return_value=1.0,
-    )
-    mocker.patch.object(
-        type(app_settings),
-        "WEIGHT_FRESHNESS",
-        new_callable=mocker.PropertyMock,
-        return_value=0.0,
-    )
-    mocker.patch.object(
-        type(app_settings),
-        "WEIGHT_POPULARITY",
-        new_callable=mocker.PropertyMock,
-        return_value=0.0,
-    )
-
-    mocker.patch.object(
-        type(app_settings),
-        "POPULARITY_EXPRESSION",
-        new_callable=mocker.PropertyMock,
-        return_value=Value(0.0),
-    )
-    mocker.patch.object(
-        type(app_settings),
-        "FRESHNESS_EXPRESSION",
-        new_callable=mocker.PropertyMock,
-        return_value=Value(0.0),
+        app_settings,
+        "_user_config",
+        {
+            "WEIGHT_SIMILARITY": 1.0,
+            "WEIGHT_FRESHNESS": 0.0,
+            "WEIGHT_POPULARITY": 0.0,
+            "POPULARITY_EXPRESSION": Value(0.0),
+            "FRESHNESS_EXPRESSION": Value(0.0),
+        },
     )
 
     mocker.patch("sentence_transformers.SentenceTransformer")
