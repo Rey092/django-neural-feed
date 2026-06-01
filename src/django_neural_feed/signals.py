@@ -1,4 +1,3 @@
-# django_neural_feed/signals.py
 import threading
 from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
