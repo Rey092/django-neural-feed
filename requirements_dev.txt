@@ -1,0 +1,10 @@
+black==26.5.1
+flake8==7.1.0
+
+pytest==9.0.3
+pytest-django==4.12.0
+pytest-mock==3.15.1
+
+psycopg2-binary==2.9.12
+
+celery==5.6.3

@@ -13,6 +13,9 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django_neural_feed",
+    "tests",
 ]
+
+AUTH_USER_MODEL = "tests.TestUser"
 
 USE_TZ = True
