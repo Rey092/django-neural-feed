@@ -148,16 +148,16 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 @pytest.mark.django_db(transaction=True)
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     mocker.patch(
-        "django_neural_feed.services.RecommendationService.calculate_embedding",
+        "django_neural_feed.signals.RecommendationService.calculate_embedding",
         return_value=[0.1, 0.2, 0.3],
     )
 
     mock_user_calc = mocker.patch(
-        "django_neural_feed.services.RecommendationService.calculate_user_embedding",
+        "django_neural_feed.signals.RecommendationService.calculate_user_embedding",
         return_value=[0.5, -0.1, 0.8],
     )
 
-    register_like_signal(TestM2MPost.likes.through, "user", "testm2mpost")
+    register_like_signal(TestM2MPost.likes.through)
 
     user = User.objects.create(username="m2m_bg_user")
 
