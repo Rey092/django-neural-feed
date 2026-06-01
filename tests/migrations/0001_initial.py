@@ -102,7 +102,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "user_embedding",
-                    pgvector.django.VectorField(blank=True, dimensions=384, null=True),
+                    pgvector.django.VectorField(blank=True, dimensions=3, null=True),
                 ),
                 (
                     "groups",
@@ -149,7 +149,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("title", models.CharField(max_length=255)),
-                ("embedding", pgvector.django.VectorField(dimensions=384)),
+                ("embedding", pgvector.django.VectorField(dimensions=3)),
             ],
         ),
         migrations.CreateModel(
