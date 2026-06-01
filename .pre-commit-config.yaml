@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: Run Black formatting
+        entry: black .
+        language: system
+        pass_filenames: false
+        always_run: true
