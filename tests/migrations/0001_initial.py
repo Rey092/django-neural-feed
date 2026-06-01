@@ -2,23 +2,26 @@
 from django.db import migrations, models
 import django.db.models.deletion
 import pgvector.django
+from pgvector.django import VectorExtension
 
 
 class Migration(migrations.Migration):
     initial = True
 
-    dependencies = [
-        ("django_neural_feed", "0001_initial"),
-    ]
+    dependencies = []
 
     operations = [
+        VectorExtension(),
         migrations.CreateModel(
             name="TestPost",
             fields=[
                 (
                     "id",
                     models.BigAutoField(
-                        auto_created=True, primary_key=True, serialize=False
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
                     ),
                 ),
                 ("title", models.CharField(max_length=255)),
@@ -31,7 +34,10 @@ class Migration(migrations.Migration):
                 (
                     "id",
                     models.BigAutoField(
-                        auto_created=True, primary_key=True, serialize=False
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
                     ),
                 ),
                 ("action_type", models.CharField(max_length=50)),
