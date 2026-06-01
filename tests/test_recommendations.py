@@ -147,8 +147,12 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
 @pytest.mark.django_db(transaction=True)
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
-    mocker.patch("sentence_transformers.SentenceTransformer")
-    mock_calculate = mocker.patch(
+    mocker.patch(
+        "django_neural_feed.services.RecommendationService.calculate_embedding",
+        return_value=[0.1, 0.2, 0.3],
+    )
+
+    mock_user_calc = mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_user_embedding",
         return_value=[0.5, -0.1, 0.8],
     )
@@ -156,6 +160,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     register_like_signal(TestM2MPost.likes.through)
 
     user = User.objects.create(username="m2m_bg_user")
+
     post = TestM2MPost.objects.create(title="Thread testing django!")
 
     post.embedding = [0.5, -0.1, 0.8]
@@ -173,6 +178,8 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
             break
         time.sleep(0.02)
 
+    # 7. Финальные проверки
     assert updated_user is not None
     assert len(updated_user.user_embedding) == 3  # type: ignore
-    mock_calculate.assert_called_once()
+
+    mock_user_calc.assert_called_once()
