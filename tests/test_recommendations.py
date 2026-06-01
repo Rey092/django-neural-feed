@@ -157,11 +157,10 @@ class SyncThread:
 
 @pytest.mark.django_db(transaction=True)
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
-    def raise_swallowed_error(msg, *args, **kwargs):
-        if "DNF" in str(msg):
-            raise RuntimeError(f"Oh no, error! Message: {msg}")
-
-    mocker.patch("logging.Logger.error", side_effect=raise_swallowed_error)
+    mocker.patch(
+        "logging.Logger.error",
+        side_effect=lambda msg, *args, **kwargs: pytest.fail(f"Logged error: {msg}"),
+    )
 
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
     mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
