@@ -159,7 +159,7 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     mock_calculate = mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_user_embedding",
-        return_value=[0.5, -0.1, 0.8]
+        return_value=[0.5, -0.1, 0.8],
     )
 
     register_like_signal(TestM2MPost.likes.through)

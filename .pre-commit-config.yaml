@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: black
         name: Run Black formatting
-        entry: black .
+        entry: .venv\Scripts\black .
         language: system
         pass_filenames: false
         always_run: true
