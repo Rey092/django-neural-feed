@@ -163,8 +163,8 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     )
 
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
-    mocker.patch("django_neural_feed.signals.on_commit", lambda f: f())
-    mocker.patch("django_neural_feed.signals.Thread", SyncThread)
+    mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
+    mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
 
     mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_embedding",
