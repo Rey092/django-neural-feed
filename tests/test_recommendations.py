@@ -102,7 +102,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     from django_neural_feed.conf import app_settings
     from django_neural_feed.services import RecommendationService
 
-    # Replace the PropertyMock mess by directly patching the instance's config dict
     mocker.patch.object(
         app_settings,
         "_user_config",
@@ -132,8 +131,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     user.user_embedding = [1.0, 0.0, 0.0]  # type: ignore
     user.save(update_fields=["user_embedding"])
 
-    print("DEBUG. User embedding is", user.user_embedding)  # type: ignore
-
     feed = RecommendationService.get_feed_for_user(
         user=user,
         model_class=TestPost,
@@ -143,13 +140,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
         limit=10,
     )
 
-    for p in feed:
-        print(
-            p.title,
-            p.similarity,
-            p.score,
-        )
-
     assert feed.count() == 2
     assert feed[0].id == post_closest.id  # type: ignore
     assert feed[1].id == post_far.id  # type: ignore
@@ -157,6 +147,7 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
 @pytest.mark.django_db(transaction=True)
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
+    mocker.patch("sentence_transformers.SentenceTransformer")
     mock_calculate = mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_user_embedding",
         return_value=[0.5, -0.1, 0.8],
