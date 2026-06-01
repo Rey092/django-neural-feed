@@ -68,4 +68,4 @@ jobs:
           pip install -e .[celery]
       - name: Run Tests
         run: |
-          pytest
+          pytest --cov=django_neural_feed
