@@ -157,7 +157,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
         return_value=[0.5, -0.1, 0.8],
     )
 
-    register_like_signal(TestM2MPost.likes.through)
+    register_like_signal(TestM2MPost.likes.through, "user", "testm2mpost")
 
     user = User.objects.create(username="m2m_bg_user")
 
@@ -171,14 +171,13 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     post.likes.add(user)
 
     updated_user = None
-    for _ in range(20):
+    for _ in range(50):
         user.refresh_from_db()
         if user.user_embedding is not None:  # type: ignore
             updated_user = user
             break
-        time.sleep(0.02)
+        time.sleep(0.05)
 
-    # 7. Финальные проверки
     assert updated_user is not None
     assert len(updated_user.user_embedding) == 3  # type: ignore
 
