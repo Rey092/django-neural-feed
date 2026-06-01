@@ -3,6 +3,7 @@ import numpy as np
 from django.contrib.auth import get_user_model
 from django_neural_feed.services import RecommendationService
 from tests.models import TestPost, TestUserAction
+from django.db.models import Value
 
 User = get_user_model()
 
@@ -114,6 +115,19 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
         "WEIGHT_POPULARITY",
         new_callable=mocker.PropertyMock,
         return_value=0.0,
+    )
+
+    mocker.patch.object(
+        type(app_settings),
+        "POPULARITY_EXPRESSION",
+        new_callable=mocker.PropertyMock,
+        return_value=Value(0.0),
+    )
+    mocker.patch.object(
+        type(app_settings),
+        "FRESHNESS_EXPRESSION",
+        new_callable=mocker.PropertyMock,
+        return_value=Value(0.0),
     )
 
     mocker.patch("sentence_transformers.SentenceTransformer")
