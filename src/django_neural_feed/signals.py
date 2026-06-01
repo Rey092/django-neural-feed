@@ -44,19 +44,24 @@ def generate_content_embedding(sender, instance, created, **kwargs):
             lambda: threading.Thread(
                 target=_run_synchronous_content_update,
                 args=(sender, instance.id),
-                daemon=True
+                daemon=True,
             ).start()
         )
 
 
-def register_like_signal(like_target, user_field_name: str, content_field_name: str):
+def register_like_signal(
+    like_target,
+    user_field_name: str | None = None,
+    content_field_name: str | None = None,
+):
     """
     Universal like register. Supports default tables and m2m
     """
+
     def user_like_changed_model(sender, instance, created, **kwargs):
         if created:
             try:
-                user_object = getattr(instance, user_field_name)
+                user_object = getattr(instance, user_field_name)  # type: ignore
                 _trigger_embedding_update(
                     user_object,
                     sender,
@@ -66,6 +71,7 @@ def register_like_signal(like_target, user_field_name: str, content_field_name: 
                 )
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).error(f"DNF Error (model signal): {e}")
 
     def user_like_changed_m2m(sender, instance, action, reverse, pk_set, **kwargs):
@@ -108,6 +114,7 @@ def register_like_signal(like_target, user_field_name: str, content_field_name: 
                         )
             except Exception as e:
                 import logging
+
                 logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
 
     if hasattr(like_target, "_meta") and like_target._meta.auto_created:
@@ -145,8 +152,14 @@ def _trigger_embedding_update(
     transaction.on_commit(
         lambda: threading.Thread(
             target=_run_synchronous_user_update,
-            args=(user_object.__class__, user_id, sender, user_field_name, content_field_name),
-            daemon=True
+            args=(
+                user_object.__class__,
+                user_id,
+                sender,
+                user_field_name,
+                content_field_name,
+            ),
+            daemon=True,
         ).start()
     )
 
@@ -159,16 +172,21 @@ def _run_synchronous_content_update(model_class, instance_id):
         if text_to_vectorize:
             from django_neural_feed.services import RecommendationService
 
-            instance.embedding = RecommendationService.calculate_embedding(text_to_vectorize)
+            instance.embedding = RecommendationService.calculate_embedding(
+                text_to_vectorize
+            )
             instance.save(update_fields=["embedding"])
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"DNF Background Thread Error (Content): {e}")
     finally:
         connection.close()
 
 
-def _run_synchronous_user_update(user_model, user_id, sender_model, user_field_name, content_field_name):
+def _run_synchronous_user_update(
+    user_model, user_id, sender_model, user_field_name, content_field_name
+):
     """Background thread for user embedding calculation"""
     try:
         user_object = user_model.objects.get(id=user_id)
@@ -184,6 +202,7 @@ def _run_synchronous_user_update(user_model, user_id, sender_model, user_field_n
         user_object.save(update_fields=["user_embedding"])
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"DNF Background Thread Error (User): {e}")
     finally:
         connection.close()

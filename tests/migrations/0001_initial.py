@@ -153,6 +153,34 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
+            name="TestM2MPost",
+            fields=[
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("title", models.CharField(max_length=100)),
+                (
+                    "embedding",
+                    pgvector.django.VectorField(blank=True, dimensions=3, null=True),
+                ),
+                (
+                    "likes",
+                    models.ManyToManyField(
+                        related_name="liked_m2m_posts", to=settings.AUTH_USER_MODEL
+                    ),
+                ),
+            ],
+            options={
+                "abstract": False,
+            },
+        ),
+        migrations.CreateModel(
             name="TestUserAction",
             fields=[
                 (

@@ -1,9 +1,11 @@
 import pytest
 import numpy as np
+import time
 from django.contrib.auth import get_user_model
 from django_neural_feed.services import RecommendationService
-from tests.models import TestPost, TestUserAction
+from tests.models import TestPost, TestUserAction, TestM2MPost
 from django.db.models import Value
+from django_neural_feed.signals import register_like_signal
 
 User = get_user_model()
 
@@ -151,3 +153,29 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     assert feed.count() == 2
     assert feed[0].id == post_closest.id  # type: ignore
     assert feed[1].id == post_far.id  # type: ignore
+
+
+@pytest.mark.django_db(transaction=True)
+def test_m2m_like_signal_updates_user_embedding_bg_thread():
+    register_like_signal(TestM2MPost.likes.through)
+
+    user = User.objects.create(username="m2m_bg_user")
+    post = TestM2MPost.objects.create(title="Thread testing django!")
+
+    post.embedding = [0.5, -0.1, 0.8]
+    post.save()
+
+    assert user.user_embedding is None  # type: ignore
+
+    post.likes.add(user)
+
+    updated_user = None
+    for _ in range(20):
+        user.refresh_from_db()
+        if user.user_embedding is not None:  # type: ignore
+            updated_user = user
+            break
+        time.sleep(0.05)
+
+    assert updated_user is not None
+    assert len(updated_user.user_embedding) == 3  # type: ignore
