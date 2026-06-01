@@ -1,7 +1,8 @@
 import numpy as np
 from django.contrib.contenttypes.models import ContentType
+from django.db.models.functions import Coalesce
 from pgvector.django import CosineDistance
-from django.db.models import F
+from django.db.models import F, Value
 
 from django_neural_feed.conf import app_settings
 
@@ -87,8 +88,8 @@ class RecommendationService:
         # Multi-variable scoring calculation running natively on the DB instance via pgvector
         queryset = queryset.annotate(
             similarity=1 - CosineDistance("embedding", user_profile_vector),
-            popularity=app_settings.POPULARITY_EXPRESSION,
-            freshness=app_settings.FRESHNESS_EXPRESSION,
+            popularity=Coalesce(app_settings.POPULARITY_EXPRESSION, Value(0.0)),
+            freshness=Coalesce(app_settings.FRESHNESS_EXPRESSION, Value(0.0)),
         )
 
         queryset = queryset.annotate(

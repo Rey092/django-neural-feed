@@ -123,7 +123,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
     user = User.objects.create_user(username="feed_tester", password="password123")
 
-    # ИСПОЛЬЗУЕМ bulk_create для гарантии, что векторы не будут перезаписаны
     posts = TestPost.objects.bulk_create(
         [
             TestPost(title="Close Match", embedding=[0.9, 0.1, 0.0]),
@@ -132,7 +131,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
         ]
     )
 
-    # Распаковываем созданные посты (PostgreSQL с bulk_create корректно возвращает ID)
     post_closest, post_far, post_disliked = posts
 
     mocker.patch.object(
