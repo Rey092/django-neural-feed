@@ -154,6 +154,7 @@ class SyncThread:
     def start(self):
         self.target(*self.args, **self.kwargs)
 
+
 @pytest.mark.django_db(transaction=True)
 def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     def raise_swallowed_error(msg, *args, **kwargs):
@@ -161,7 +162,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
             raise RuntimeError(f"Oh no, error! Message: {msg}")
 
     mocker.patch("logging.Logger.error", side_effect=raise_swallowed_error)
-    
+
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
     mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
     mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
@@ -179,7 +180,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
 
     user = User.objects.create(username="m2m_bg_user")
     post = TestM2MPost.objects.create(title="Thread testing django!")
-    
+
     post.embedding = [0.5, -0.1, 0.8]
     post.save()
 
