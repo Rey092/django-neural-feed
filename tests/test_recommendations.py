@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from django.contrib.auth import get_user_model
 from django_neural_feed.services import RecommendationService
-from tests.models import TestPost, TestUserAction 
+from tests.models import TestPost, TestUserAction
 
 User = get_user_model()
 
@@ -50,7 +50,9 @@ def test_calculate_user_embedding_calculates_mean_correctly(mocker):
         vector_3,
     ]
 
-    result = RecommendationService.calculate_user_embedding(mock_queryset, content_field_name="post")
+    result = RecommendationService.calculate_user_embedding(
+        mock_queryset, content_field_name="post"
+    )
     assert result == expected_mean
 
 
@@ -63,7 +65,7 @@ def test_calculate_user_embedding_calculates_mean_correctly(mocker):
 def test_calculate_user_embedding_with_real_db(mocker):
     """Verify mean vector aggregation using actual PostgreSQL records."""
     mocker.patch("sentence_transformers.SentenceTransformer")
-    
+
     user = User.objects.create_user(username="db_tester", password="password123")
 
     post1 = TestPost.objects.create(title="P1", embedding=[1.0, 2.0, 3.0])
@@ -75,8 +77,10 @@ def test_calculate_user_embedding_with_real_db(mocker):
     TestUserAction.objects.create(user=user, post=post3, action_type="like")
 
     queryset = TestUserAction.objects.filter(user=user, action_type="like")
-    
-    result = RecommendationService.calculate_user_embedding(queryset, content_field_name="post")
+
+    result = RecommendationService.calculate_user_embedding(
+        queryset, content_field_name="post"
+    )
 
     assert result == [2.0, 4.0, 6.0]
 
@@ -84,11 +88,12 @@ def test_calculate_user_embedding_with_real_db(mocker):
 @pytest.mark.django_db
 def test_get_feed_for_user_sorting_and_filtering(mocker):
     """Verify pgvector distance sorting and exclusion logic in database query."""
-    from django_neural_feed.conf import app_settings 
-    mocker.patch.object(app_settings, 'WEIGHT_SIMILARITY', 1.0)
-    mocker.patch.object(app_settings, 'WEIGHT_FRESHNESS', 0.0)
-    mocker.patch.object(app_settings, 'WEIGHT_POPULARITY', 0.0)
-    
+    from django_neural_feed.conf import app_settings
+
+    mocker.patch.object(app_settings, "WEIGHT_SIMILARITY", 1.0)
+    mocker.patch.object(app_settings, "WEIGHT_FRESHNESS", 0.0)
+    mocker.patch.object(app_settings, "WEIGHT_POPULARITY", 0.0)
+
     mocker.patch("sentence_transformers.SentenceTransformer")
 
     user = User.objects.create_user(username="feed_tester", password="password123")
@@ -115,5 +120,5 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     )
 
     assert feed.count() == 2
-    assert feed[0].id == post_closest.id # type: ignore
+    assert feed[0].id == post_closest.id  # type: ignore
     assert feed[1].id == post_far.id  # type: ignore
