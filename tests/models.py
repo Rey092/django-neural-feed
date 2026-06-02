@@ -17,7 +17,7 @@ class TestPost(NeuralRecommendMixin, models.Model):
 
 class TestM2MPost(NeuralRecommendMixin, models.Model):
     title = models.CharField(max_length=100)
-    likes = models.ManyToManyField(related_name="liked_m2m_posts", to=TestUser)
+    likes = models.ManyToManyField(TestUser, related_name="liked_posts")
 
     def get_ready_text(self) -> str:
         return self.title
