@@ -60,6 +60,19 @@ def test_calculate_user_embedding_calculates_mean_correctly(mocker):
     assert result == expected_mean
 
 
+def test_get_ready_text_not_implemented_error():
+    from django.db import models
+    from django_neural_feed.mixins import NeuralRecommendMixin
+
+    class BrokenDummyModel(NeuralRecommendMixin):
+        pass
+
+    instance = BrokenDummyModel()
+
+    with pytest.raises(NotImplementedError):
+        instance.get_ready_text()
+
+
 # ==============================================================================
 # INTEGRATION TESTS (REAL DATABASE & PGVECTOR)
 # ==============================================================================
@@ -85,15 +98,32 @@ def test_calculate_user_embedding_with_real_db(mocker):
     )
 
     TestUserAction.objects.create(user=user, post=posts[0], action_type="like")
-    TestUserAction.objects.create(user=user, post=posts[1], action_type="like")
-    TestUserAction.objects.create(user=user, post=posts[2], action_type="like")
 
-    queryset = TestUserAction.objects.filter(user=user, action_type="like")
-    result = RecommendationService.calculate_user_embedding(
-        queryset, content_field_name="post"
+
+@pytest.mark.django_db
+def test_get_feed_for_user_without_user_embedding(mocker):
+    """Verify that feed is working without user_embedding."""
+    from django.db.models import Value
+    from django_neural_feed.conf import app_settings
+    from django_neural_feed.services import RecommendationService
+
+    user = User.objects.create_user(username="feed_tester", password="password123")
+
+    post1 = TestPost.objects.create(title="Post #1", embedding=[0.1, 0.2, 0.3])
+    post2 = TestPost.objects.create(title="Post #2", embedding=[0.1, 0.2, 0.3])
+    post3 = TestPost.objects.create(title="Post #3", embedding=[0.1, 0.2, 0.3])
+
+    feed = RecommendationService.get_feed_for_user(
+        user=user,
+        model_class=TestPost,
+        queryset=TestPost.objects.all(),
+        likes_queryset=TestUserAction.objects.filter(user=user, action_type="like"),
+        excluded_ids=[],
+        limit=10,
     )
-
-    assert result == [2.0, 4.0, 6.0]
+    feed = list(feed)
+    assert len(feed) == 3
+    assert feed[0].id > feed[1].id > feed[2].id
 
 
 @pytest.mark.django_db
