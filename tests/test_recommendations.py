@@ -210,3 +210,147 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
 
     np.testing.assert_array_almost_equal(user.user_embedding, [0.5, -0.1, 0.8])  # type: ignore
     mock_user_calc.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_post_save_signal_triggers_celery(mocker):
+    from django_neural_feed.conf import app_settings
+
+    mocker.patch.dict(app_settings._user_config, {"CELERY_ENABLED": True})
+
+    mock_celery_delay = mocker.patch(
+        "django_neural_feed.tasks.generate_content_embedding_task.delay"
+    )
+
+    post = TestM2MPost.objects.create(title="Celery post trigger")
+
+    mock_celery_delay.assert_called_once_with(post.id, "tests.testm2mpost")  # type: ignore
+
+
+@pytest.mark.django_db
+def test_m2m_signal_triggers_celery(mocker):
+    from django_neural_feed.conf import app_settings
+    from django.contrib.auth import get_user_model
+
+    mocker.patch.dict(app_settings._user_config, {"CELERY_ENABLED": True})
+    mock_celery_delay = mocker.patch(
+        "django_neural_feed.tasks.update_user_embedding_task.delay"
+    )
+
+    register_like_signal(TestM2MPost.likes.through)
+
+    User = get_user_model()
+    user = User.objects.create(username="celery_m2m_user")
+    post = TestM2MPost.objects.create(title="Celery M2M post trigger")
+
+    post.likes.add(user)
+
+    mock_celery_delay.assert_called_once()
+
+
+import numpy as np
+
+
+@pytest.mark.django_db
+def test_generate_content_embedding_task_success(mocker):
+    mocker.patch(
+        "django_neural_feed.services.RecommendationService.calculate_embedding",
+        return_value=[0.1, 0.2, 0.3],
+    )
+    from django_neural_feed.tasks import generate_content_embedding_task
+
+    post = TestM2MPost.objects.create(title="Execute task content body")
+    model_path = f"{post._meta.app_label}.{post._meta.model_name}"
+
+    # Прямой вызов функции таски
+    generate_content_embedding_task(post.id, model_path)  # type: ignore
+
+    post.refresh_from_db()
+    assert post.embedding == [0.1, 0.2, 0.3]
+
+
+@pytest.mark.django_db
+def test_update_user_embedding_task_success(mocker):
+    mocker.patch(
+        "django_neural_feed.services.RecommendationService.calculate_user_embedding",
+        return_value=np.array([0.7, 0.8, 0.9]),
+    )
+    from django_neural_feed.tasks import update_user_embedding_task
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    user = User.objects.create(username="execute_task_user")
+    post = TestM2MPost.objects.create(title="Execute task M2M body")
+
+    register_like_signal(TestM2MPost.likes.through)
+    post.likes.add(user)
+
+    through_model = TestM2MPost.likes.through
+    likes_model_path = (
+        f"{through_model._meta.app_label}.{through_model._meta.model_name}"
+    )
+    users_model_path = f"{user._meta.app_label}.{user._meta.model_name}"
+
+    user_field_name = ""
+    content_field_name = ""
+    for field in through_model._meta.fields:
+        if field.is_relation:
+            if field.related_model == User:
+                user_field_name = field.name
+            elif field.related_model == TestM2MPost:
+                content_field_name = field.name
+
+    update_user_embedding_task(
+        likes_model_path, users_model_path, user.id, user_field_name, content_field_name  # type: ignore
+    )
+
+    user.refresh_from_db()
+    np.testing.assert_array_almost_equal(user.user_embedding, [0.7, 0.8, 0.9])  # type: ignore
+
+
+def test_get_model_from_path_invalid_scenarios():
+    from django_neural_feed.tasks import get_model_from_path
+
+    assert get_model_from_path("invalidpath") is None
+    assert get_model_from_path("non_existent_app.FakeModel") is None
+
+
+@pytest.mark.django_db
+def test_tasks_early_return_on_missing_model():
+    from django_neural_feed.tasks import (
+        generate_content_embedding_task,
+        update_user_embedding_task,
+    )
+
+    assert generate_content_embedding_task(1, "bad.path") is None
+    assert update_user_embedding_task("bad.path", "bad.path", 1, "u", "c") is None
+
+
+@pytest.mark.django_db
+def test_update_user_embedding_task_user_does_not_exist():
+    from django_neural_feed.tasks import update_user_embedding_task
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    through_model = TestM2MPost.likes.through
+    likes_model_path = (
+        f"{through_model._meta.app_label}.{through_model._meta.model_name}"
+    )
+    users_model_path = f"{User._meta.app_label}.{User._meta.model_name}"
+
+    result = update_user_embedding_task(
+        likes_model_path, users_model_path, 999999, "testuser", "testm2mpost"
+    )
+    assert result is None
+
+
+@pytest.mark.django_db
+def test_tasks_generic_exception_handling(mocker):
+    from django_neural_feed.tasks import generate_content_embedding_task
+
+    mocker.patch(
+        "django_neural_feed.tasks.get_model_from_path",
+        side_effect=RuntimeError("Fatal dump"),
+    )
+
+    generate_content_embedding_task(1, "tests.testm2mpost")
