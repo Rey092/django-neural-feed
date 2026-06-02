@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import time
+from unittest.mock import PropertyMock
 from django.contrib.auth import get_user_model
 from django_neural_feed.services import RecommendationService
 from tests.models import TestPost, TestUserAction, TestM2MPost
@@ -157,7 +158,11 @@ class SyncThread:
 
 @pytest.fixture
 def sync_like_signal_env(mocker):
-    mocker.patch("django_neural_feed.signals.app_settings.CELERY_ENABLED", False)
+    mocker.patch(
+        "django_neural_feed.config.AppSettings.CELERY_ENABLED",
+        new_callable=PropertyMock,
+        return_value=False,
+    )
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
     mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
     mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
