@@ -264,6 +264,100 @@ def test_m2m_signal_celery_not_installed_fallback(mocker):
     mock_thread.assert_called_once()
 
 
+@pytest.mark.django_db
+def test_user_like_changed_model_handles_exception(mocker, caplog):
+    import logging
+    from django.db.models.signals import post_save
+
+    mocker.patch(
+        "django_neural_feed.signals._trigger_embedding_update",
+        side_effect=Exception("Custom crash"),
+    )
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.auto_created = False
+    mock_sender._meta.label_lower = "tests.fakemodel"
+
+    register_like_signal(
+        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+    )
+
+    with caplog.at_level(logging.ERROR):
+        post_save.send(sender=mock_sender, instance=mocker.MagicMock(), created=True)
+
+    assert any(
+        "DNF Error (model signal)" in record.message for record in caplog.records
+    )
+
+
+def test_register_like_signal_mode_auto_for_model(mocker):
+    from django.db.models.signals import post_save
+
+    mock_connect = mocker.patch.object(post_save, "connect")
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.auto_created = False
+    mock_sender._meta.label_lower = "tests.automodel"
+
+    register_like_signal(
+        mock_sender, mode="auto", user_field_name="user", content_field_name="post"
+    )
+
+    mock_connect.assert_called_once()
+    assert mock_connect.call_args[1]["dispatch_uid"] == "dnf_model_tests.automodel"
+
+
+def test_register_like_signal_mode_model_success(mocker):
+    from django.db.models.signals import post_save
+
+    mock_connect = mocker.patch.object(post_save, "connect")
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.label_lower = "tests.explicitmodel"
+
+    register_like_signal(
+        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+    )
+
+    mock_connect.assert_called_once()
+    assert mock_connect.call_args[1]["dispatch_uid"] == "dnf_model_tests.explicitmodel"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_trigger_embedding_update_celery_broker_down(mocker, caplog):
+    import logging
+    from django_neural_feed.conf import app_settings
+    from django.db.models.signals import post_save
+
+    mocker.patch.object(
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=True,
+    )
+
+    mocker.patch(
+        "django_neural_feed.tasks.update_user_embedding_task.delay",
+        side_effect=Exception("Connection refused"),
+    )
+
+    mock_thread = mocker.patch("threading.Thread")
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.auto_created = False
+    mock_sender._meta.label_lower = "tests.brokermodel"
+
+    register_like_signal(
+        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+    )
+
+    with caplog.at_level(logging.ERROR):
+        post_save.send(sender=mock_sender, instance=mocker.MagicMock(), created=True)
+
+    mock_thread.assert_called_once()
+    assert any("Celery broker is down" in record.message for record in caplog.records)
+
+
 # ==============================================================================
 # INTEGRATION TESTS (REAL DATABASE & PGVECTOR)
 # ==============================================================================
