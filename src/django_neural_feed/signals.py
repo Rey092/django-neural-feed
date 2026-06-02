@@ -70,7 +70,9 @@ def register_like_signal(
                 logging.getLogger(__name__).error(f"DNF Error (model signal): {e}")
 
     def user_like_changed_m2m(sender, instance, action, reverse, pk_set, **kwargs):
+        print(f"\n[M2M RECEIVER] called! Action: {action}, Reverse: {reverse}")
         if action == "post_add":
+            print(f"[M2M RECEIVER] Check completed, working with instance: {instance}")
             try:
                 from django.contrib.auth import get_user_model
 
@@ -121,6 +123,10 @@ def register_like_signal(
                 import logging
 
                 logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
+        else:
+            print(
+                f"[M2M RECEIVER] skipping action: {action}, because {action} != 'post_add'"
+            )
 
     is_m2m = hasattr(like_target, "_meta") and getattr(
         like_target._meta, "auto_created", False
@@ -166,7 +172,12 @@ def _trigger_embedding_update(
             )
             return
         except (ImportError, ModuleNotFoundError):
+            print(
+                "Celery enabled, triggered 'except (ImportError, ModuleNotFoundError):'"
+            )
             pass
+
+    print(f"transaction on commit, target is _run_synchronous_user_update")
 
     transaction.on_commit(
         lambda: threading.Thread(
