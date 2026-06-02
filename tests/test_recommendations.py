@@ -476,11 +476,9 @@ class SyncThread:
         self.target = target
         self.args = args
         self.kwargs = kwargs or {}
-        print(f"\n[SyncThread INIT] target: {target}, name: {extra_kwargs.get('name')}")
 
     def start(self):
         if self.target:
-            print(f"[SyncThread START] Running {self.target.__name__} sync...")
             self.target(*self.args, **self.kwargs)
 
 

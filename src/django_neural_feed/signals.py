@@ -202,15 +202,13 @@ def _trigger_embedding_update(
             )
             return
         except (ImportError, ModuleNotFoundError):
-            print(
-                "Celery enabled, triggered 'except (ImportError, ModuleNotFoundError):'"
+            logger.error(
+                "Celery enabled, triggered 'except (ImportError, ModuleNotFoundError)'"
             )
         except Exception as celery_err:
             logger.error(
                 f"Celery broker is down ({celery_err}), falling back to threads."
             )
-
-    print(f"transaction on commit, target is _run_synchronous_user_update")
 
     transaction.on_commit(
         lambda: threading.Thread(
@@ -234,14 +232,10 @@ def _run_synchronous_content_update(model_class, instance_id):
         if text_to_vectorize:
             from django_neural_feed.services import RecommendationService
 
-            print(
-                f"\n[SIGNAL] Trying to calculate embedding for: '{text_to_vectorize}'"
-            )
             instance.embedding = RecommendationService.calculate_embedding(
                 text_to_vectorize
             )
             instance.save(update_fields=["embedding"])
-            print("[SIGNAL] Embedding done!")
 
     except Exception as e:
         logger.exception("DNF [SIGNAL ERROR] Caught exception during content update:")
