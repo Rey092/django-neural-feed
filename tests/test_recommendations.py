@@ -122,7 +122,7 @@ def test_register_model_signal_requires_fields():
         register_like_signal(TestM2MPost, mode="model")
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_post_save_celery_broker_down_fallback_to_thread(mocker):
     from django_neural_feed.conf import app_settings
 
@@ -159,14 +159,20 @@ def test_run_synchronous_content_update_handles_exception(mocker):
 
 
 @pytest.mark.django_db
-def test_run_synchronous_user_update_handles_exception(mocker):
-    from django_neural_feed.signals import _run_synchronous_user_update
+def test_run_synchronous_user_update_handles_exception(caplog):
+    import logging
     from django.contrib.auth import get_user_model
+    from django_neural_feed.signals import _run_synchronous_user_update
 
-    mock_logger = mocker.patch("django_neural_feed.signals.logger")
+    with caplog.at_level(logging.ERROR):
+        _run_synchronous_user_update(
+            get_user_model(), 99999, TestM2MPost, "user", "post"
+        )
 
-    _run_synchronous_user_update(get_user_model(), 99999, TestM2MPost, "user", "post")
-    mock_logger.error.assert_called_once()
+    assert any(
+        "DNF Background Thread Error (User)" in record.message
+        for record in caplog.records
+    )
 
 
 def test_user_like_changed_m2m_invalid_user_relation_logging(mocker, caplog):
@@ -229,7 +235,7 @@ def test_user_like_changed_m2m_invalid_content_relation_logging(mocker, caplog):
     )
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_m2m_signal_celery_not_installed_fallback(mocker):
     import sys
     from django_neural_feed.conf import app_settings
