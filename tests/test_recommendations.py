@@ -281,7 +281,12 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
 def test_post_save_signal_triggers_celery(mocker):
     from django_neural_feed.conf import app_settings
 
-    mocker.patch.object(app_settings, "CELERY_ENABLED", True)
+    mocker.patch.object(
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=True,
+    )
 
     mock_celery_delay = mocker.patch(
         "django_neural_feed.tasks.generate_content_embedding_task.delay"
@@ -297,7 +302,12 @@ def test_m2m_signal_triggers_celery(mocker):
     from django_neural_feed.conf import app_settings
     from django.contrib.auth import get_user_model
 
-    mocker.patch.object(app_settings, "CELERY_ENABLED", True)
+    mocker.patch.object(
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=True,
+    )
 
     mocker.patch("django_neural_feed.tasks.generate_content_embedding_task.delay")
     mock_user_celery_delay = mocker.patch(
