@@ -145,8 +145,6 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     assert feed[1].id == post_far.id  # type: ignore
 
 
-
-
 class SyncThread:
     def __init__(self, target, args=(), kwargs=None, daemon=None):
         self.target = target
@@ -195,9 +193,9 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
     if add_relation == "forward":
         post.likes.add(user)
     else:
-        user.liked_posts.add(post) # type: ignore
+        user.liked_posts.add(post)  # type: ignore
 
     user.refresh_from_db()
 
-    assert user.user_embedding == [0.5, -0.1, 0.8] # type: ignore
+    assert user.user_embedding == [0.5, -0.1, 0.8]  # type: ignore
     mock_user_calc.assert_called_once()

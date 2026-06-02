@@ -56,7 +56,7 @@ def register_like_signal(
     def user_like_changed_model(sender, instance, created, **kwargs):
         if created:
             try:
-                user_object = getattr(instance, user_field_name) #type:ignore
+                user_object = getattr(instance, user_field_name)  # type: ignore
                 _trigger_embedding_update(
                     user_object,
                     sender,
@@ -122,18 +122,28 @@ def register_like_signal(
 
                 logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
 
-    is_m2m = hasattr(like_target, "_meta") and getattr(like_target._meta, "auto_created", False)
+    is_m2m = hasattr(like_target, "_meta") and getattr(
+        like_target._meta, "auto_created", False
+    )
     label = like_target._meta.label_lower
 
     if is_m2m:
-        m2m_changed.connect(user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}")
+        m2m_changed.connect(
+            user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}"
+        )
     else:
         if not user_field_name or not content_field_name:
             raise ValueError(
                 "For custom like model specify user_field_name and content_field_name"
             )
-        post_save.connect(user_like_changed_model, sender=like_target, dispatch_uid=f"dnf_model_{label}")
-        m2m_changed.connect(user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}")
+        post_save.connect(
+            user_like_changed_model,
+            sender=like_target,
+            dispatch_uid=f"dnf_model_{label}",
+        )
+        m2m_changed.connect(
+            user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}"
+        )
 
 
 def _trigger_embedding_update(
@@ -146,7 +156,7 @@ def _trigger_embedding_update(
 
             likes_model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
             users_model_path = f"{user_object.__class__._meta.app_label}.{user_object.__class__._meta.model_name}"
-            celery_task: Task = update_user_embedding_task  #type:ignore
+            celery_task: Task = update_user_embedding_task  # type: ignore
             celery_task.delay(
                 likes_model_path,
                 users_model_path,
@@ -190,6 +200,7 @@ def _run_synchronous_content_update(model_class, instance_id):
         logging.getLogger(__name__).error(f"DNF Background Thread Error (Content): {e}")
     finally:
         from django.db import connection
+
         connection.close()
 
 
@@ -214,4 +225,5 @@ def _run_synchronous_user_update(
         logging.getLogger(__name__).error(f"DNF Background Thread Error (User): {e}")
     finally:
         from django.db import connection
+
         connection.close()
