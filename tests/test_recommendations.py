@@ -233,7 +233,9 @@ def test_m2m_signal_triggers_celery(mocker):
     from django.contrib.auth import get_user_model
 
     mocker.patch.dict(app_settings._user_config, {"CELERY_ENABLED": True})
-    mock_celery_delay = mocker.patch(
+
+    mocker.patch("django_neural_feed.tasks.generate_content_embedding_task.delay")
+    mock_user_celery_delay = mocker.patch(
         "django_neural_feed.tasks.update_user_embedding_task.delay"
     )
 
@@ -245,10 +247,7 @@ def test_m2m_signal_triggers_celery(mocker):
 
     post.likes.add(user)
 
-    mock_celery_delay.assert_called_once()
-
-
-import numpy as np
+    mock_user_celery_delay.assert_called_once()
 
 
 @pytest.mark.django_db
@@ -262,11 +261,10 @@ def test_generate_content_embedding_task_success(mocker):
     post = TestM2MPost.objects.create(title="Execute task content body")
     model_path = f"{post._meta.app_label}.{post._meta.model_name}"
 
-    # Прямой вызов функции таски
     generate_content_embedding_task(post.id, model_path)  # type: ignore
 
     post.refresh_from_db()
-    assert post.embedding == [0.1, 0.2, 0.3]
+    np.testing.assert_array_almost_equal(post.embedding, [0.1, 0.2, 0.3])
 
 
 @pytest.mark.django_db
