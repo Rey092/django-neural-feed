@@ -172,7 +172,7 @@ class Migration(migrations.Migration):
                 (
                     "likes",
                     models.ManyToManyField(
-                        related_name="liked_m2m_posts", to=settings.AUTH_USER_MODEL
+                        related_name="liked_posts", to=settings.AUTH_USER_MODEL
                     ),
                 ),
             ],
