@@ -108,6 +108,155 @@ def test_update_user_embedding_task_exception_handling(mocker, caplog):
     assert "Database connection closed failure" in caplog.text
 
 
+@pytest.mark.django_db
+def test_post_save_signal_no_trigger_if_text_unchanged(mocker):
+    post = TestM2MPost.objects.create(title="Same text")
+    mock_thread = mocker.patch("threading.Thread")
+
+    post.save()
+    mock_thread.assert_not_called()
+
+
+def test_register_model_signal_requires_fields():
+    with pytest.raises(ValueError):
+        register_like_signal(TestM2MPost, mode="model")
+
+
+@pytest.mark.django_db
+def test_post_save_celery_broker_down_fallback_to_thread(mocker):
+    from django_neural_feed.conf import app_settings
+
+    mocker.patch.object(
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=True,
+    )
+
+    mocker.patch(
+        "django_neural_feed.tasks.generate_content_embedding_task.delay",
+        side_effect=Exception("Connection refused"),
+    )
+    mock_logger = mocker.patch("django_neural_feed.signals.logger")
+    mock_thread = mocker.patch("threading.Thread")
+
+    TestM2MPost.objects.create(title="Celery down post")
+
+    mock_logger.error.assert_called_once()
+    mock_thread.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_run_synchronous_content_update_handles_exception(mocker):
+    from django_neural_feed.signals import _run_synchronous_content_update
+
+    mock_logger = mocker.patch("django_neural_feed.signals.logger")
+
+    with pytest.raises(Exception):
+        _run_synchronous_content_update(TestM2MPost, 99999)
+
+    mock_logger.exception.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_run_synchronous_user_update_handles_exception(mocker):
+    from django_neural_feed.signals import _run_synchronous_user_update
+    from django.contrib.auth import get_user_model
+
+    mock_logger = mocker.patch("django_neural_feed.signals.logger")
+
+    _run_synchronous_user_update(get_user_model(), 99999, TestM2MPost, "user", "post")
+    mock_logger.error.assert_called_once()
+
+
+def test_user_like_changed_m2m_invalid_user_relation_logging(mocker, caplog):
+    import logging
+    from django.db.models.signals import m2m_changed
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.fields = []
+    mock_sender.__name__ = "FakeM2MModel"
+    mock_sender._meta.label_lower = "tests.fakem2mmodel"
+
+    register_like_signal(mock_sender, mode="m2m")
+
+    with caplog.at_level(logging.ERROR):
+        m2m_changed.send(
+            sender=mock_sender,
+            instance=mocker.MagicMock(),
+            action="post_add",
+            reverse=False,
+            pk_set={1},
+        )
+
+    assert any(
+        "must have exactly one relation to User" in record.message
+        for record in caplog.records
+    )
+
+
+def test_user_like_changed_m2m_invalid_content_relation_logging(mocker, caplog):
+    import logging
+    from django.db.models.signals import m2m_changed
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+
+    mock_user_field = mocker.MagicMock()
+    mock_user_field.is_relation = True
+    mock_user_field.related_model = User
+    mock_user_field.name = "user"
+
+    mock_sender = mocker.MagicMock()
+    mock_sender._meta.fields = [mock_user_field]
+    mock_sender.__name__ = "FakeM2MModel"
+    mock_sender._meta.label_lower = "tests.fakem2mmodel"
+
+    register_like_signal(mock_sender, mode="m2m")
+
+    with caplog.at_level(logging.ERROR):
+        m2m_changed.send(
+            sender=mock_sender,
+            instance=mocker.MagicMock(),
+            action="post_add",
+            reverse=False,
+            pk_set={1},
+        )
+
+    assert any(
+        "must have exactly one content relation" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.django_db
+def test_m2m_signal_celery_not_installed_fallback(mocker):
+    import sys
+    from django_neural_feed.conf import app_settings
+    from django.contrib.auth import get_user_model
+
+    mocker.patch.object(
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=True,
+    )
+
+    mocker.patch.dict(sys.modules, {"django_neural_feed.tasks": None})
+
+    mock_thread = mocker.patch("threading.Thread")
+
+    register_like_signal(TestM2MPost.likes.through, mode="m2m")
+
+    User = get_user_model()
+    user = User.objects.create(username="celery_missing_user")
+    post = TestM2MPost.objects.create(title="Celery missing post")
+
+    post.likes.add(user)
+
+    mock_thread.assert_called_once()
+
+
 # ==============================================================================
 # INTEGRATION TESTS (REAL DATABASE & PGVECTOR)
 # ==============================================================================
