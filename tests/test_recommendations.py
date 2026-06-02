@@ -208,5 +208,5 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
 
     user.refresh_from_db()
 
-    assert user.user_embedding == [0.5, -0.1, 0.8]  # type: ignore
+    np.testing.assert_array_almost_equal(user.user_embedding, [0.5, -0.1, 0.8])  # type: ignore
     mock_user_calc.assert_called_once()
