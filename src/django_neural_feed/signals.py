@@ -217,6 +217,7 @@ def _run_synchronous_content_update(model_class, instance_id):
             instance.embedding = RecommendationService.calculate_embedding(
                 text_to_vectorize
             )
+            instance.save(update_fields=["embedding"])
             print("[SIGNAL] Embedding done!")
 
     except Exception as e:

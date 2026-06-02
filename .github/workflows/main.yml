@@ -38,23 +38,30 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
         django-version: ["4.2", "5.0"]
 
-    services:
-      postgres:
-        image: ghcr.io/pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: django_neural_feed_test_db
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start PostgreSQL with pgvector
+        run: |
+          docker run -d \
+            --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_DB=django_neural_feed_test_db \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=password \
+            ghcr.io/pgvector/pgvector:pg16
+          
+          until docker exec postgres pg_isready; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
