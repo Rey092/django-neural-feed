@@ -25,6 +25,10 @@ class NeuralRecommendMixin(models.Model):
         """
         raise NotImplementedError("You should assign get_ready_text() in your model!")
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_text = self.get_ready_text() if self.pk else None
+
 
 class NeuralUserMixin(models.Model):
     """

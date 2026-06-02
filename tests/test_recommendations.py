@@ -261,7 +261,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
         return_value=[0.5, -0.1, 0.8],
     )
 
-    register_like_signal(TestM2MPost.likes.through)
+    register_like_signal(TestM2MPost.likes.through, mode="m2m")
 
     user = User.objects.create(username="m2m_bg_user")
     post = TestM2MPost.objects.create(title="Thread testing django!")
@@ -281,7 +281,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
 def test_post_save_signal_triggers_celery(mocker):
     from django_neural_feed.conf import app_settings
 
-    mocker.patch.dict(app_settings._user_config, {"CELERY_ENABLED": True})
+    mocker.patch.object(app_settings, "CELERY_ENABLED", True)
 
     mock_celery_delay = mocker.patch(
         "django_neural_feed.tasks.generate_content_embedding_task.delay"
@@ -297,14 +297,14 @@ def test_m2m_signal_triggers_celery(mocker):
     from django_neural_feed.conf import app_settings
     from django.contrib.auth import get_user_model
 
-    mocker.patch.dict(app_settings._user_config, {"CELERY_ENABLED": True})
+    mocker.patch.object(app_settings, "CELERY_ENABLED", True)
 
     mocker.patch("django_neural_feed.tasks.generate_content_embedding_task.delay")
     mock_user_celery_delay = mocker.patch(
         "django_neural_feed.tasks.update_user_embedding_task.delay"
     )
 
-    register_like_signal(TestM2MPost.likes.through)
+    register_like_signal(TestM2MPost.likes.through, mode="m2m")
 
     User = get_user_model()
     user = User.objects.create(username="celery_m2m_user")
@@ -345,7 +345,7 @@ def test_update_user_embedding_task_success(mocker):
     user = User.objects.create(username="execute_task_user")
     post = TestM2MPost.objects.create(title="Execute task M2M body")
 
-    register_like_signal(TestM2MPost.likes.through)
+    register_like_signal(TestM2MPost.likes.through, mode="m2m")
     post.likes.add(user)
 
     through_model = TestM2MPost.likes.through
