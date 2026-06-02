@@ -73,6 +73,41 @@ def test_get_ready_text_not_implemented_error():
         instance.get_ready_text()
 
 
+@pytest.mark.django_db
+def test_calculate_user_embedding_with_no_likes(mocker):
+    from django_neural_feed.services import RecommendationService
+
+    likes_qs = TestUserAction.objects.none()
+
+    result = RecommendationService.calculate_user_embedding(
+        likes_queryset=likes_qs, content_field_name="post"
+    )
+
+    assert result is None
+
+
+def test_update_user_embedding_task_exception_handling(mocker, caplog):
+    from django_neural_feed.tasks import update_user_embedding_task
+    import logging
+
+    mocker.patch(
+        "django_neural_feed.tasks.get_model_from_path",
+        side_effect=Exception("Database connection closed failure"),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        update_user_embedding_task(
+            likes_model_path="tests.TestLike",
+            users_model_path="tests.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="post",
+        )
+
+    assert len(caplog.records) == 1
+    assert "Database connection closed failure" in caplog.text
+
+
 # ==============================================================================
 # INTEGRATION TESTS (REAL DATABASE & PGVECTOR)
 # ==============================================================================
