@@ -53,14 +53,10 @@ def register_like_signal(
     user_field_name: str | None = None,
     content_field_name: str | None = None,
 ):
-    """
-    Universal like register. Supports default tables and m2m
-    """
-
     def user_like_changed_model(sender, instance, created, **kwargs):
         if created:
             try:
-                user_object = getattr(instance, user_field_name)  # type: ignore
+                user_object = getattr(instance, user_field_name) #type:ignore
                 _trigger_embedding_update(
                     user_object,
                     sender,
@@ -82,15 +78,25 @@ def register_like_signal(
                 target_content_field = None
                 target_user_field = None
 
+                model = kwargs.get("model")
+                if reverse:
+                    user_class = instance.__class__
+                    content_class = model
+                else:
+                    content_class = instance.__class__
+                    user_class = model
+
                 for field in sender._meta.fields:
                     if field.is_relation:
-                        if issubclass(instance.__class__, field.related_model):
-                            target_content_field = field.name
-                        elif (
-                            issubclass(User, field.related_model)
-                            or field.related_model == User
-                        ):
-                            target_user_field = field.name
+                        if field.related_model == user_class:
+                            if not target_user_field:
+                                target_user_field = field.name
+                        elif field.related_model == content_class:
+                            if not target_content_field:
+                                target_content_field = field.name
+
+                if not target_user_field or not target_content_field:
+                    raise ValueError(f"Could not resolve M2M fields for {sender}")
 
                 if reverse:
                     user_object = instance
@@ -116,14 +122,18 @@ def register_like_signal(
 
                 logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
 
-    if hasattr(like_target, "_meta") and like_target._meta.auto_created:
-        m2m_changed.connect(user_like_changed_m2m, sender=like_target)
+    is_m2m = hasattr(like_target, "_meta") and getattr(like_target._meta, "auto_created", False)
+    label = like_target._meta.label_lower
+
+    if is_m2m:
+        m2m_changed.connect(user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}")
     else:
         if not user_field_name or not content_field_name:
             raise ValueError(
                 "For custom like model specify user_field_name and content_field_name"
             )
-        post_save.connect(user_like_changed_model, sender=like_target)
+        post_save.connect(user_like_changed_model, sender=like_target, dispatch_uid=f"dnf_model_{label}")
+        m2m_changed.connect(user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}")
 
 
 def _trigger_embedding_update(
@@ -136,7 +146,7 @@ def _trigger_embedding_update(
 
             likes_model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
             users_model_path = f"{user_object.__class__._meta.app_label}.{user_object.__class__._meta.model_name}"
-            celery_task: Task = update_user_embedding_task  # type: ignore
+            celery_task: Task = update_user_embedding_task  #type:ignore
             celery_task.delay(
                 likes_model_path,
                 users_model_path,
@@ -164,7 +174,6 @@ def _trigger_embedding_update(
 
 
 def _run_synchronous_content_update(model_class, instance_id):
-    """Background thread for content embedding calculation"""
     try:
         instance = model_class.objects.get(id=instance_id)
         text_to_vectorize = instance.get_ready_text()
@@ -180,13 +189,13 @@ def _run_synchronous_content_update(model_class, instance_id):
 
         logging.getLogger(__name__).error(f"DNF Background Thread Error (Content): {e}")
     finally:
+        from django.db import connection
         connection.close()
 
 
 def _run_synchronous_user_update(
     user_model, user_id, sender_model, user_field_name, content_field_name
 ):
-    """Background thread for user embedding calculation"""
     try:
         user_object = user_model.objects.get(id=user_id)
         filter_kwargs = {f"{user_field_name}_id": user_id}
@@ -204,4 +213,5 @@ def _run_synchronous_user_update(
 
         logging.getLogger(__name__).error(f"DNF Background Thread Error (User): {e}")
     finally:
+        from django.db import connection
         connection.close()

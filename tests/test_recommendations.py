@@ -145,31 +145,43 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
     assert feed[1].id == post_far.id  # type: ignore
 
 
+
+
 class SyncThread:
-    def __init__(self, target, args=(), kwargs=None, daemon=True):
+    def __init__(self, target, args=(), kwargs=None, daemon=None):
         self.target = target
-        self.args = args
+        self.args = args or ()
         self.kwargs = kwargs or {}
 
     def start(self):
         self.target(*self.args, **self.kwargs)
 
 
-@pytest.mark.django_db(transaction=True)
-def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
+@pytest.fixture
+def sync_like_signal_env(mocker):
+    mocker.patch("django_neural_feed.signals.app_settings.CELERY_ENABLED", False)
+    mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
+    mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
+    mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
     mocker.patch(
         "logging.Logger.error",
         side_effect=lambda msg, *args, **kwargs: pytest.fail(f"Logged error: {msg}"),
     )
 
-    mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
-    mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
-    mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
 
-    mocker.patch(
-        "django_neural_feed.services.RecommendationService.calculate_embedding",
-        return_value=[0.1, 0.2, 0.3],
-    )
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize(
+    "add_relation",
+    [
+        pytest.param("forward", id="post.likes.add(user)"),
+        pytest.param("reverse", id="user.liked_posts.add(post)"),
+    ],
+)
+def test_m2m_like_signal_updates_user_embedding_bg_thread(
+    mocker,
+    sync_like_signal_env,
+    add_relation,
+):
     mock_user_calc = mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_user_embedding",
         return_value=[0.5, -0.1, 0.8],
@@ -180,15 +192,12 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(mocker):
     user = User.objects.create(username="m2m_bg_user")
     post = TestM2MPost.objects.create(title="Thread testing django!")
 
-    post.embedding = [0.5, -0.1, 0.8]
-    post.save()
-
-    assert user.user_embedding is None  # type: ignore
-
-    post.likes.add(user)
+    if add_relation == "forward":
+        post.likes.add(user)
+    else:
+        user.liked_posts.add(post) # type: ignore
 
     user.refresh_from_db()
 
-    assert user.user_embedding is not None  # type: ignore
-    assert user.user_embedding == [0.5, -0.1, 0.8]  # type: ignore
+    assert user.user_embedding == [0.5, -0.1, 0.8] # type: ignore
     mock_user_calc.assert_called_once()
