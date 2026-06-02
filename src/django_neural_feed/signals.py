@@ -81,24 +81,19 @@ def register_like_signal(
                 target_user_field = None
 
                 model = kwargs.get("model")
-                if reverse:
-                    user_class = instance.__class__
-                    content_class = model
+                defining_model = model if reverse else instance.__class__
+
+                m2m_field = next(f for f in defining_model._meta.many_to_many if f.through == sender)  # type: ignore
+
+                src_field = m2m_field.m2m_field_name()
+                dst_field = m2m_field.m2m_reverse_field_name()
+
+                if issubclass(defining_model, User):  # type: ignore
+                    target_user_field = src_field
+                    target_content_field = dst_field
                 else:
-                    content_class = instance.__class__
-                    user_class = model
-
-                for field in sender._meta.fields:
-                    if field.is_relation:
-                        if field.related_model == user_class:
-                            if not target_user_field:
-                                target_user_field = field.name
-                        elif field.related_model == content_class:
-                            if not target_content_field:
-                                target_content_field = field.name
-
-                if not target_user_field or not target_content_field:
-                    raise ValueError(f"Could not resolve M2M fields for {sender}")
+                    target_user_field = dst_field
+                    target_content_field = src_field
 
                 if reverse:
                     user_object = instance
