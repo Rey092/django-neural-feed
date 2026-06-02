@@ -158,11 +158,16 @@ class SyncThread:
 
 @pytest.fixture
 def sync_like_signal_env(mocker):
-    mocker.patch(
-        "django_neural_feed.config.AppSettings.CELERY_ENABLED",
-        new_callable=PropertyMock,
-        return_value=False,
+    from django_neural_feed.conf import app_settings
+
+    mocker.patch.object(
+        app_settings,
+        "_user_config",
+        {
+            "CELERY_ENABLED": False,
+        },
     )
+
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
     mocker.patch("django_neural_feed.signals.transaction.on_commit", lambda f: f())
     mocker.patch("django_neural_feed.signals.threading.Thread", SyncThread)
