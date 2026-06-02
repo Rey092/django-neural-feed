@@ -257,6 +257,7 @@ def test_m2m_signal_celery_not_installed_fallback(mocker):
     User = get_user_model()
     user = User.objects.create(username="celery_missing_user")
     post = TestM2MPost.objects.create(title="Celery missing post")
+    mock_thread.reset_mock()
 
     post.likes.add(user)
 
