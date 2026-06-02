@@ -183,6 +183,9 @@ def _trigger_embedding_update(
     )
 
 
+import traceback
+
+
 def _run_synchronous_content_update(model_class, instance_id):
     try:
         instance = model_class.objects.get(id=instance_id)
@@ -190,18 +193,18 @@ def _run_synchronous_content_update(model_class, instance_id):
         if text_to_vectorize:
             from django_neural_feed.services import RecommendationService
 
+            print(
+                f"\n[SIGNAL] Trying to calculate embedding for: '{text_to_vectorize}'"
+            )
             instance.embedding = RecommendationService.calculate_embedding(
                 text_to_vectorize
             )
-            instance.save(update_fields=["embedding"])
+            print("[SIGNAL] Embedding done!")
+
     except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).error(f"DNF Background Thread Error (Content): {e}")
-    finally:
-        from django.db import connection
-
-        connection.close()
+        print(f"\n[SIGNAL ERROR] Caught exception! Here:")
+        traceback.print_exc()
+        raise e
 
 
 def _run_synchronous_user_update(

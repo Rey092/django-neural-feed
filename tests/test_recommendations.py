@@ -147,13 +147,16 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
 
 class SyncThread:
-    def __init__(self, target, args=(), kwargs=None, daemon=None):
+    def __init__(self, target=None, args=(), kwargs=None, *extra_args, **extra_kwargs):
         self.target = target
-        self.args = args or ()
+        self.args = args
         self.kwargs = kwargs or {}
+        print(f"\n[SyncThread INIT] target: {target}, name: {extra_kwargs.get('name')}")
 
     def start(self):
-        self.target(*self.args, **self.kwargs)
+        if self.target:
+            print(f"[SyncThread START] Running {self.target.__name__} sync...")
+            self.target(*self.args, **self.kwargs)
 
 
 @pytest.fixture
@@ -161,11 +164,10 @@ def sync_like_signal_env(mocker):
     from django_neural_feed.conf import app_settings
 
     mocker.patch.object(
-        app_settings,
-        "_user_config",
-        {
-            "CELERY_ENABLED": False,
-        },
+        type(app_settings),
+        "CELERY_ENABLED",
+        new_callable=mocker.PropertyMock,
+        return_value=False,
     )
 
     mocker.patch("django_neural_feed.signals.connection.close", lambda: None)
@@ -190,6 +192,10 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
     sync_like_signal_env,
     add_relation,
 ):
+    mocker.patch(
+        "django_neural_feed.services.RecommendationService.calculate_embedding",
+        return_value=[0.1, 0.2, 0.3],
+    )
     mock_user_calc = mocker.patch(
         "django_neural_feed.services.RecommendationService.calculate_user_embedding",
         return_value=[0.5, -0.1, 0.8],
