@@ -1,5 +1,23 @@
 # **Django Neural Feed (DNF)**
 
+<p align="left">
+  <a href="https://github.com/ItsDersty/django-neural-feed/actions/workflows/main.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/ItsDersty/django-neural-feed/main.yml?branch=main&style=flat-square&label=tests" alt="Build Status">
+  </a>
+  <a href="https://github.com/ItsDersty/django-neural-feed">
+    <img src="https://img.shields.io/badge/coverage-100%25-brightgreen?style=flat-square" alt="Coverage">
+  </a>
+  <a href="https://pypi.org/project/django-neural-feed/">
+    <img src="https://img.shields.io/pypi/v/django-neural-feed?style=flat-square&color=blue" alt="PyPI Version">
+  </a>
+  <a href="https://github.com/ItsDersty/django-neural-feed/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/ItsDersty/django-neural-feed?style=flat-square&color=green" alt="License">
+  </a>
+  <a href="https://github.com/ItsDersty/django-neural-feed">
+    <img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square" alt="Python Version">
+  </a>
+</p>
+
 Django Neural Feed (DNF) is a Django application designed to build personalized content feeds using vector embeddings. It utilizes PostgreSQL's pgvector extension for semantic ranking and combines it with content popularity and freshness metrics directly inside the database query.
 
 ## **Features**
@@ -60,7 +78,8 @@ class YourAppConfig(AppConfig):
 
         # Automatically updates user preference embeddings when a new Like is created  
         register_like_signal(  
-            like_model_class=Like,   
+            like_model_class=Like,
+            mode='model' # use 'model' if you have likes model; 'm2m' if Many2Many.
             user_field_name='user',    # Field pointing to User model  
             content_field_name='post'  # Field pointing to Content model  
         )
