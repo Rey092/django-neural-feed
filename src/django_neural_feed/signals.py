@@ -135,7 +135,10 @@ def register_like_signal(
 
     if is_m2m:
         m2m_changed.connect(
-            user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}"
+            user_like_changed_m2m,
+            sender=like_target,
+            dispatch_uid=f"dnf_m2m_{label}",
+            weak=False,
         )
     else:
         if not user_field_name or not content_field_name:
@@ -146,9 +149,13 @@ def register_like_signal(
             user_like_changed_model,
             sender=like_target,
             dispatch_uid=f"dnf_model_{label}",
+            weak=False,
         )
         m2m_changed.connect(
-            user_like_changed_m2m, sender=like_target, dispatch_uid=f"dnf_m2m_{label}"
+            user_like_changed_m2m,
+            sender=like_target,
+            dispatch_uid=f"dnf_m2m_{label}",
+            weak=False,
         )
 
 
