@@ -274,16 +274,21 @@ def test_user_like_changed_model_handles_exception(mocker, caplog):
         side_effect=Exception("Custom crash"),
     )
 
-    mock_sender = mocker.MagicMock()
-    mock_sender._meta.auto_created = False
-    mock_sender._meta.label_lower = "tests.fakemodel"
+    class FakeModel:
+        class _meta:
+            auto_created = False
+            label_lower = "tests.fakemodel"
+
+        __name__ = "FakeModel"
 
     register_like_signal(
-        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+        FakeModel, mode="model", user_field_name="user", content_field_name="post"
     )
 
+    mock_instance = mocker.MagicMock()
+
     with caplog.at_level(logging.ERROR):
-        post_save.send(sender=mock_sender, instance=mocker.MagicMock(), created=True)
+        post_save.send(sender=FakeModel, instance=mock_instance, created=True)
 
     assert any(
         "DNF Error (model signal)" in record.message for record in caplog.records
@@ -343,16 +348,21 @@ def test_trigger_embedding_update_celery_broker_down(mocker, caplog):
 
     mock_thread = mocker.patch("threading.Thread")
 
-    mock_sender = mocker.MagicMock()
-    mock_sender._meta.auto_created = False
-    mock_sender._meta.label_lower = "tests.brokermodel"
+    class BrokerModel:
+        class _meta:
+            auto_created = False
+            label_lower = "tests.brokermodel"
+
+        __name__ = "BrokerModel"
 
     register_like_signal(
-        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+        BrokerModel, mode="model", user_field_name="user", content_field_name="post"
     )
 
+    mock_instance = mocker.MagicMock()
+
     with caplog.at_level(logging.ERROR):
-        post_save.send(sender=mock_sender, instance=mocker.MagicMock(), created=True)
+        post_save.send(sender=BrokerModel, instance=mock_instance, created=True)
 
     mock_thread.assert_called_once()
     assert any("Celery broker is down" in record.message for record in caplog.records)
