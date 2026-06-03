@@ -20,8 +20,17 @@ class RecommendationService:
         """Lazy loading wrapper to instantiate the heavy neural encoder model only when required."""
         if cls._model_instance is None:
             from sentence_transformers import SentenceTransformer
+            from huggingface_hub.errors import LocalEntryNotFoundError
 
-            cls._model_instance = SentenceTransformer(app_settings.MODEL_NAME)
+            try:
+                cls._model_instance = SentenceTransformer(
+                    app_settings.MODEL_NAME, local_files_only=True
+                )
+            except Exception:
+                cls._model_instance = SentenceTransformer(
+                    app_settings.MODEL_NAME, local_files_only=False
+                )
+
         return cls._model_instance
 
     @classmethod
@@ -36,18 +45,16 @@ class RecommendationService:
         cls, likes_queryset, content_field_name: str | None = None
     ) -> list[float] | None:
         """
-        Builds a single user preference vector by computing the geometric mean
-        of their most recently interacted content vectors.
+        Builds a single user preference vector by computing the arithmetic mean
+        of their most recently interacted content vectors and applying L2 normalization.
         """
         limit = app_settings.USER_LIKES_LIMIT
         prefix = f"{content_field_name}__" if content_field_name else ""
 
-        # Pull only target fields that already possess computed embeddings
         filter_kwargs = {f"{prefix}embedding__isnull": False}
         values_field = f"{prefix}embedding"
 
-        # NOTE: Assumes the interaction model uses an incrementing 'id' for chronological ordering
-        recent_emb = (
+        recent_emb = list(
             likes_queryset.filter(**filter_kwargs)
             .order_by("-id")[:limit]
             .values_list(values_field, flat=True)
@@ -56,18 +63,22 @@ class RecommendationService:
         if not recent_emb:
             return None
 
-        # Process vector averaging natively through numpy
-        vectors_array = np.array(list(recent_emb))
+        vectors_array = np.asarray(recent_emb, dtype=np.float32)
+
         mean_vector = np.mean(vectors_array, axis=0)
+
+        norm = np.linalg.norm(mean_vector)
+        if norm > 0:
+            mean_vector = mean_vector / norm
+
         return mean_vector.tolist()
 
     @classmethod
     def get_feed_for_user(
         cls,
         user,
-        model_class,
+        *,
         queryset,
-        likes_queryset,
         excluded_ids=None,
         limit: int = 20,
     ):
@@ -87,7 +98,8 @@ class RecommendationService:
 
         # Multi-variable scoring calculation running natively on the DB instance via pgvector
         queryset = queryset.annotate(
-            similarity=1 - CosineDistance("embedding", user_profile_vector),
+            similarity=1
+            - Coalesce(CosineDistance("embedding", user_profile_vector), Value(0.0)),
             popularity=Coalesce(app_settings.POPULARITY_EXPRESSION, Value(0.0)),
             freshness=Coalesce(app_settings.FRESHNESS_EXPRESSION, Value(0.0)),
         )

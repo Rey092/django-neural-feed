@@ -3,7 +3,7 @@ from django.db.models import Value
 
 # Fallback defaults if the developer skips these keys in settings.py
 DEFAULT_CONFIG = {
-    "MODEL_NAME": "intfloat/multilingual-e5-small",
+    "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",
     "VECTOR_DIMENSION": 384,
     "WEIGHT_SIMILARITY": 0.6,
     "WEIGHT_FRESHNESS": 0.2,

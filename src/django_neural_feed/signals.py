@@ -58,8 +58,9 @@ def generate_content_embedding(sender, instance, created, **kwargs):
 
 
 def register_like_signal(
+    *,
     like_target,
-    mode: Literal["auto", "m2m", "model"],
+    mode: Literal["m2m", "model"],
     user_field_name: str | None = None,
     content_field_name: str | None = None,
 ):
@@ -148,13 +149,8 @@ def register_like_signal(
 
             logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
 
-    is_m2m = False
-    if mode == "m2m":
-        is_m2m = True
-    elif mode == "model":
-        is_m2m = False
-    else:
-        is_m2m = getattr(like_target._meta, "auto_created", False)
+    is_m2m = mode == "m2m"
+
     label = like_target._meta.label_lower
 
     if is_m2m:

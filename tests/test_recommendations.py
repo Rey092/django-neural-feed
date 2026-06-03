@@ -119,7 +119,7 @@ def test_post_save_signal_no_trigger_if_text_unchanged(mocker):
 
 def test_register_model_signal_requires_fields():
     with pytest.raises(ValueError):
-        register_like_signal(TestM2MPost, mode="model")
+        register_like_signal(like_target=TestM2MPost, mode="model")
 
 
 @pytest.mark.django_db(transaction=True)
@@ -184,7 +184,7 @@ def test_user_like_changed_m2m_invalid_user_relation_logging(mocker, caplog):
     mock_sender.__name__ = "FakeM2MModel"
     mock_sender._meta.label_lower = "tests.fakem2mmodel"
 
-    register_like_signal(mock_sender, mode="m2m")
+    register_like_signal(like_target=mock_sender, mode="m2m")
 
     with caplog.at_level(logging.ERROR):
         m2m_changed.send(
@@ -218,7 +218,7 @@ def test_user_like_changed_m2m_invalid_content_relation_logging(mocker, caplog):
     mock_sender.__name__ = "FakeM2MModel"
     mock_sender._meta.label_lower = "tests.fakem2mmodel"
 
-    register_like_signal(mock_sender, mode="m2m")
+    register_like_signal(like_target=mock_sender, mode="m2m")
 
     with caplog.at_level(logging.ERROR):
         m2m_changed.send(
@@ -252,7 +252,7 @@ def test_m2m_signal_celery_not_installed_fallback(mocker):
 
     mock_thread = mocker.patch("threading.Thread")
 
-    register_like_signal(TestM2MPost.likes.through, mode="m2m")
+    register_like_signal(like_target=TestM2MPost.likes.through, mode="m2m")
 
     User = get_user_model()
     user = User.objects.create(username="celery_missing_user")
@@ -282,7 +282,10 @@ def test_user_like_changed_model_handles_exception(mocker, caplog):
         __name__ = "FakeModel"
 
     register_like_signal(
-        FakeModel, mode="model", user_field_name="user", content_field_name="post"
+        like_target=FakeModel,
+        mode="model",
+        user_field_name="user",
+        content_field_name="post",
     )
 
     mock_instance = mocker.MagicMock()
@@ -295,7 +298,7 @@ def test_user_like_changed_model_handles_exception(mocker, caplog):
     )
 
 
-def test_register_like_signal_mode_auto_for_model(mocker):
+""" def test_register_like_signal_mode_auto_for_model(mocker): # We don't use auto anymore
     from django.db.models.signals import post_save
 
     mock_connect = mocker.patch.object(post_save, "connect")
@@ -310,6 +313,7 @@ def test_register_like_signal_mode_auto_for_model(mocker):
 
     mock_connect.assert_called_once()
     assert mock_connect.call_args[1]["dispatch_uid"] == "dnf_model_tests.automodel"
+ """
 
 
 def test_register_like_signal_mode_model_success(mocker):
@@ -321,7 +325,10 @@ def test_register_like_signal_mode_model_success(mocker):
     mock_sender._meta.label_lower = "tests.explicitmodel"
 
     register_like_signal(
-        mock_sender, mode="model", user_field_name="user", content_field_name="post"
+        like_target=mock_sender,
+        mode="model",
+        user_field_name="user",
+        content_field_name="post",
     )
 
     mock_connect.assert_called_once()
@@ -356,7 +363,10 @@ def test_trigger_embedding_update_celery_broker_down(mocker, caplog):
         __name__ = "BrokerModel"
 
     register_like_signal(
-        BrokerModel, mode="model", user_field_name="user", content_field_name="post"
+        like_target=BrokerModel,
+        mode="model",
+        user_field_name="user",
+        content_field_name="post",
     )
 
     mock_instance = mocker.MagicMock()
@@ -410,9 +420,7 @@ def test_get_feed_for_user_without_user_embedding(mocker):
 
     feed = RecommendationService.get_feed_for_user(
         user=user,
-        model_class=TestPost,
         queryset=TestPost.objects.all(),
-        likes_queryset=TestUserAction.objects.filter(user=user, action_type="like"),
         excluded_ids=[],
         limit=10,
     )
@@ -459,9 +467,7 @@ def test_get_feed_for_user_sorting_and_filtering(mocker):
 
     feed = RecommendationService.get_feed_for_user(
         user=user,
-        model_class=TestPost,
         queryset=TestPost.objects.all(),
-        likes_queryset=TestUserAction.objects.filter(user=user, action_type="like"),
         excluded_ids=[post_disliked.id],  # type: ignore
         limit=10,
     )
@@ -519,7 +525,7 @@ def test_m2m_like_signal_updates_user_embedding_bg_thread(
         return_value=[0.5, -0.1, 0.8],
     )
 
-    register_like_signal(TestM2MPost.likes.through, mode="m2m")
+    register_like_signal(like_target=TestM2MPost.likes.through, mode="m2m")
 
     user = User.objects.create(username="m2m_bg_user")
     post = TestM2MPost.objects.create(title="Thread testing django!")
@@ -572,7 +578,7 @@ def test_m2m_signal_triggers_celery(mocker):
         "django_neural_feed.tasks.update_user_embedding_task.delay"
     )
 
-    register_like_signal(TestM2MPost.likes.through, mode="m2m")
+    register_like_signal(like_target=TestM2MPost.likes.through, mode="m2m")
 
     User = get_user_model()
     user = User.objects.create(username="celery_m2m_user")
@@ -613,7 +619,7 @@ def test_update_user_embedding_task_success(mocker):
     user = User.objects.create(username="execute_task_user")
     post = TestM2MPost.objects.create(title="Execute task M2M body")
 
-    register_like_signal(TestM2MPost.likes.through, mode="m2m")
+    register_like_signal(like_target=TestM2MPost.likes.through, mode="m2m")
     post.likes.add(user)
 
     through_model = TestM2MPost.likes.through

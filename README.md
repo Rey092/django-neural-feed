@@ -78,7 +78,7 @@ class YourAppConfig(AppConfig):
 
         # Automatically updates user preference embeddings when a new Like is created  
         register_like_signal(  
-            like_model_class=Like,
+            like_target=Like,
             mode='model' # use 'model' if you have likes model; 'm2m' if Many2Many.
             user_field_name='user',    # Field pointing to User model  
             content_field_name='post'  # Field pointing to Content model  
@@ -86,7 +86,7 @@ class YourAppConfig(AppConfig):
 ```
 ### **3. Get the Feed**
 
-Pass your querysets to the RecommendationService to get a ranked and filtered feed:
+Pass your queryset to the RecommendationService to get a ranked and filtered feed:
 ```python
 from django_neural_feed.services import RecommendationService  
 from .models import Post, Like
@@ -97,15 +97,10 @@ def my_feed_view(request):
         user=request.user,   
         is_dislike=True  
     ).values_list('post_id', flat=True)  
-      
-    # Get user's active likes to calculate interests  
-    user_likes = Like.objects.filter(user=request.user, is_dislike=False)
 
     feed_queryset = RecommendationService.get_feed_for_user(  
         user=request.user,  
-        model_class=Post,  
         queryset=Post.objects.all(),  
-        likes_queryset=user_likes,  
         excluded_ids=excluded_ids,  
         limit=20  
     )  
@@ -119,7 +114,7 @@ Add DNF_CONFIG to your settings.py to change default behaviors:
 DNF_CONFIG = {  
     "CELERY_ENABLED": True,  
     "USER_LIKES_LIMIT": 30,  
-    "MODEL_NAME": "intfloat/multilingual-e5-small",  
+    "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",  
     "WEIGHT_SIMILARITY": 0.6,  
     "WEIGHT_FRESHNESS": 0.2,  
     "WEIGHT_POPULARITY": 0.2,  
@@ -131,12 +126,12 @@ DNF_CONFIG = {
 | :---- | :---- | :---- |
 | `CELERY_ENABLED` | `False` | Set to `True` to process embedding generation via Celery tasks in the background. |
 | `USER_LIKES_LIMIT` | `20` | How many recent user likes are analyzed to calculate the average user interest profile vector. |
-| `MODEL_NAME` | `'intfloat/multilingual-e5-small'` | The SentenceTransformer model used for text vectorization. |
+| `MODEL_NAME` | `'paraphrase-multilingual-MiniLM-L12-v2'` | The SentenceTransformer model used for text vectorization. |
 | `WEIGHT_SIMILARITY` | `0.6` | Scoring multiplier for semantic vector similarity. |
 | `WEIGHT_FRESHNESS` | `0.2` | Scoring multiplier for content freshness. |
 | `WEIGHT_POPULARITY` | `0.2` | Scoring multiplier for content popularity. |
-| `POPULARITY_EXPRESSION` | `Value(0.0)` | Django F-expression or database function used to get popularity values. Defaults to a neutral constant. |
-| `FRESHNESS_EXPRESSION` | `Value(0.0)` | SQL expression or Django expression for the time-decay factor. Defaults to a neutral constant. |
+| `POPULARITY_EXPRESSION` | `Value(1.0)` | Django F-expression or database function used to get popularity values. Defaults to a neutral constant. |
+| `FRESHNESS_EXPRESSION` | `Value(1.0)` | SQL expression or Django expression for the time-decay factor. Defaults to a neutral constant. |
 
 ## **License**
 
