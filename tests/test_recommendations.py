@@ -31,7 +31,9 @@ def test_calculate_embedding_calls_sentence_transformers_correctly(mocker):
     RecommendationService._model_instance = None
     result = RecommendationService.calculate_embedding(test_text)
 
-    mock_transformer_class.assert_called_once_with("intfloat/multilingual-e5-small")
+    mock_transformer_class.assert_called_once_with(
+        "paraphrase-multilingual-MiniLM-L12-v2"
+    )
     mock_model_instance.encode.assert_called_once_with(test_text, convert_to_numpy=True)
 
     assert isinstance(result, list)
@@ -45,7 +47,7 @@ def test_calculate_user_embedding_calculates_mean_correctly(mocker):
     vector_1 = [1.0, 2.0, 3.0]
     vector_2 = [2.0, 4.0, 6.0]
     vector_3 = [3.0, 6.0, 9.0]
-    expected_mean = [2.0, 4.0, 6.0]
+    expected_mean = [0.26726123690605164, 0.5345224738121033, 0.8017836809158325]
 
     mock_queryset = mocker.MagicMock()
     mock_queryset.filter.return_value.order_by.return_value.__getitem__.return_value.values_list.return_value = [

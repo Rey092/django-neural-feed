@@ -1,7 +1,7 @@
 import numpy as np
 from django.contrib.contenttypes.models import ContentType
 from django.db.models.functions import Coalesce
-from pgvector.django import CosineDistance
+from pgvector.django import MaxInnerProduct
 from django.db.models import F, Value
 
 from django_neural_feed.conf import app_settings
@@ -37,7 +37,7 @@ class RecommendationService:
     def calculate_embedding(cls, text: str) -> list[float]:
         """Encodes raw text into a dense vector using the configured transformer."""
         model = cls._get_model()
-        embedding = model.encode(text, convert_to_numpy=True)
+        embedding = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
         return embedding.tolist()
 
     @classmethod
@@ -98,8 +98,9 @@ class RecommendationService:
 
         # Multi-variable scoring calculation running natively on the DB instance via pgvector
         queryset = queryset.annotate(
-            similarity=1
-            - Coalesce(CosineDistance("embedding", user_profile_vector), Value(0.0)),
+            similarity=Coalesce(
+                -MaxInnerProduct("embedding", user_profile_vector), Value(0.0)
+            ),
             popularity=Coalesce(app_settings.POPULARITY_EXPRESSION, Value(0.0)),
             freshness=Coalesce(app_settings.FRESHNESS_EXPRESSION, Value(0.0)),
         )
