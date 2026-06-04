@@ -76,12 +76,6 @@ jobs:
             requirements_dev.txt
             pyproject.toml
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Create venv
-        run: uv venv
-
       - name: Install Dependencies
         run: |
           uv pip install "django==${{ matrix.django-version }}"
