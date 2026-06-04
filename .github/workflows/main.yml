@@ -80,10 +80,11 @@ jobs:
         env:
           UV_TORCH_BACKEND: cpu
         run: |
+          uv pip install torch --torch-backend=cpu --index-strategy unsafe-best-match
           uv pip install "django==${{ matrix.django-version }}"
 
           if [ -f requirements_dev.txt ]; then
-            uv pip install -r requirements_dev.txt
+            uv pip install -r requirements_dev.txt --torch-backend=cpu
           fi
 
           uv pip install -e '.[celery]'
