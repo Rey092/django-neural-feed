@@ -19,7 +19,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-cache: true # Для линтера встроенный кэш ок, тут нет тяжелых зависимостей
+          enable-cache: true
 
       - name: Run Black
         run: uvx black --check src/ tests/

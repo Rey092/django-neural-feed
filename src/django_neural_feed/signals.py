@@ -1,17 +1,16 @@
 import threading
+import logging
+from functools import partial
+from django.db import connection, transaction
 from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
-from django.db import connection, transaction
 from django_neural_feed.conf import app_settings
-from typing import Literal
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 @receiver(post_save)
 def generate_content_embedding(sender, instance, created, **kwargs):
-    """Autogeneration of embedding for models with NeuralRecommendMixin."""
     from django_neural_feed.mixins import NeuralRecommendMixin
 
     if not issubclass(sender, NeuralRecommendMixin):
@@ -26,238 +25,207 @@ def generate_content_embedding(sender, instance, created, **kwargs):
         current_text = instance.get_ready_text()
         text_changed = current_text != getattr(instance, "_original_text", None)
 
-    should_generate = created or instance.embedding is None or text_changed
-
-    if should_generate:
+    if created or instance.embedding is None or text_changed:
         instance._original_text = instance.get_ready_text()
+
         if app_settings.CELERY_ENABLED:
             try:
-                from celery import Task
                 from .tasks import generate_content_embedding_task
 
                 model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
-                celery_task: Task = generate_content_embedding_task  # type: ignore
-                celery_task.delay(instance.id, model_path)
+                generate_content_embedding_task.delay(instance.id, model_path)  # type: ignore
                 return
-            except (ImportError, ModuleNotFoundError):
-                logger.warning(
-                    "DNF: CELERY_ENABLED is True, but celery is not installed! Falling back to background threads."
-                )
             except Exception as celery_err:
-                logger.error(
-                    f"Celery broker is down ({celery_err}), falling back to threads."
-                )
+                logger.error(f"DNF Celery error, falling back to threads: {celery_err}")
 
         transaction.on_commit(
             lambda: threading.Thread(
                 target=_run_synchronous_content_update,
-                args=(sender, instance.id),
+                kwargs={"model_class": sender, "instance_id": instance.id},
                 daemon=True,
             ).start()
         )
 
 
-def register_like_signal(
-    *,
-    like_target,
-    mode: Literal["m2m", "model"],
-    user_field_name: str | None = None,
-    content_field_name: str | None = None,
-):
-    from functools import partial
+def register_feed_signals(feed_class):
+    """Entry point to bind signals based on feed configuration."""
+    like_target = feed_class.interaction_model
+    if not like_target:
+        return
 
-    def user_like_changed_model(sender, instance, created, **kwargs):
-        if created:
-            try:
-                user_object = getattr(instance, user_field_name)  # type: ignore
-                _trigger_embedding_update(
-                    user_object,
-                    sender,
-                    user_object.id,
-                    user_field_name,
-                    content_field_name,
-                )
-            except Exception as e:
-                import logging
-
-                logging.getLogger(__name__).error(f"DNF Error (model signal): {e}")
-
-    def user_like_changed_m2m(sender, instance, action, reverse, pk_set, **kwargs):
-        if action not in ("post_add", "post_remove"):
-            return
-
-        user_field_name = kwargs.get("user_field_name")
-        content_field_name = kwargs.get("content_field_name")
-
-        try:
-            from django.contrib.auth import get_user_model
-
-            User = get_user_model()
-
-            if not user_field_name or not content_field_name:
-                relation_fields = [f for f in sender._meta.fields if f.is_relation]
-
-                user_fields = [
-                    f
-                    for f in relation_fields
-                    if f.related_model == User
-                    or (
-                        isinstance(f.related_model, type)
-                        and issubclass(f.related_model, User)
-                    )
-                ]
-
-                if len(user_fields) != 1:
-                    raise ValueError(
-                        f"DNF: Model {sender.__name__} must have exactly one relation to User. "
-                        f"Found {len(user_fields)}."
-                    )
-
-                content_fields = [
-                    f for f in relation_fields if f.name != user_fields[0].name
-                ]
-
-                if len(content_fields) != 1:
-                    raise ValueError(
-                        f"DNF: Model {sender.__name__} must have exactly one content relation. "
-                        f"Found {len(content_fields)}."
-                    )
-
-                user_field_name = user_fields[0].name
-                content_field_name = content_fields[0].name
-
-            if reverse:
-                _trigger_embedding_update(
-                    instance,
-                    sender,
-                    instance.id,
-                    user_field_name,
-                    content_field_name,
-                )
-            else:
-                for user_object in User.objects.filter(pk__in=pk_set):
-                    _trigger_embedding_update(
-                        user_object,
-                        sender,
-                        user_object.id,  # type: ignore
-                        user_field_name,
-                        content_field_name,
-                    )
-
-        except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).error(f"DNF Error (M2M signal): {e}")
-
-    is_m2m = mode == "m2m"
-
+    mode = getattr(feed_class, "mode", "model")
+    feed_id = feed_class.feed_id
     label = like_target._meta.label_lower
 
-    if is_m2m:
+    if mode == "m2m":
         m2m_changed.connect(
-            partial(
-                user_like_changed_m2m,
-                user_field_name=user_field_name,
-                content_field_name=content_field_name,
-            ),
+            partial(_user_like_changed_m2m, feed_class=feed_class),
             sender=like_target,
-            dispatch_uid=f"dnf_m2m_{label}",
+            dispatch_uid=f"dnf_m2m_{feed_id}_{label}",
             weak=False,
         )
     else:
-        if not user_field_name or not content_field_name:
+        if not getattr(feed_class, "user_field_name", None) or not getattr(
+            feed_class, "content_field_name", None
+        ):
             raise ValueError(
-                "For custom like model specify user_field_name and content_field_name"
+                "Specify user_field_name and content_field_name in your Feed class for model mode."
             )
 
         post_save.connect(
-            user_like_changed_model,
+            partial(_user_like_changed_model, feed_class=feed_class),
             sender=like_target,
-            dispatch_uid=f"dnf_model_{label}",
+            dispatch_uid=f"dnf_model_{feed_id}_{label}",
             weak=False,
         )
 
 
-def _trigger_embedding_update(
-    user_object, sender, user_id, user_field_name, content_field_name
+def _user_like_changed_model(sender, instance, created, *, feed_class, **kwargs):
+    if not created:
+        return
+    try:
+        user_object = getattr(instance, feed_class.user_field_name)
+        _trigger_user_embedding_update(
+            user_object=user_object, sender=sender, feed_class=feed_class
+        )
+    except Exception as e:
+        logger.error(f"DNF model signal error: {e}")
+
+
+def _user_like_changed_m2m(
+    sender, instance, action, reverse, pk_set, *, feed_class, **kwargs
 ):
+    if action not in ("post_add", "post_remove"):
+        return
+
+    try:
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
+        user_field_name = getattr(feed_class, "user_field_name", None)
+
+        # Auto-discover relation fields if not explicitly defined
+        if not user_field_name:
+            relations = [f for f in sender._meta.fields if f.is_relation]
+            user_fields = [
+                f
+                for f in relations
+                if f.related_model == User
+                or (
+                    isinstance(f.related_model, type)
+                    and issubclass(f.related_model, User)
+                )
+            ]
+            if len(user_fields) != 1:
+                raise ValueError(
+                    f"DNF: M2M Model {sender.__name__} must have exactly one relation to User."
+                )
+            feed_class.user_field_name = user_fields[0].name
+
+            content_fields = [f for f in relations if f.name != user_fields[0].name]
+            if len(content_fields) != 1:
+                raise ValueError(
+                    f"DNF: M2M Model {sender.__name__} must have exactly one content relation."
+                )
+            feed_class.content_field_name = content_fields[0].name
+
+        if reverse:
+            _trigger_user_embedding_update(
+                user_object=instance, sender=sender, feed_class=feed_class
+            )
+        else:
+            for user_object in User.objects.filter(pk__in=pk_set):
+                _trigger_user_embedding_update(
+                    user_object=user_object, sender=sender, feed_class=feed_class
+                )
+    except Exception as e:
+        logger.error(f"DNF M2M signal error: {e}")
+
+
+def _trigger_user_embedding_update(*, user_object, sender, feed_class):
+    """Routes the update to Celery or a background thread."""
+    target_feed_id = getattr(feed_class, "linked_feed_id", None) or feed_class.feed_id
+
     if app_settings.CELERY_ENABLED:
         try:
             from celery import Task
             from .tasks import update_user_embedding_task
 
-            likes_model_path = f"{sender._meta.app_label}.{sender._meta.model_name}"
-            users_model_path = f"{user_object.__class__._meta.app_label}.{user_object.__class__._meta.model_name}"
             celery_task: Task = update_user_embedding_task  # type: ignore
             celery_task.delay(
-                likes_model_path,
-                users_model_path,
-                user_id,
-                user_field_name,
-                content_field_name,
+                likes_model_path=f"{sender._meta.app_label}.{sender._meta.model_name}",
+                users_model_path=f"{user_object.__class__._meta.app_label}.{user_object.__class__._meta.model_name}",
+                user_id=user_object.id,
+                user_field_name=feed_class.user_field_name,
+                content_field_name=feed_class.content_field_name,
+                feed_id=target_feed_id,  # Передаем ID фида
+                user_likes_limit=feed_class.user_likes_limit,  # Передаем лимит
             )
             return
-        except (ImportError, ModuleNotFoundError):
-            logger.error(
-                "Celery enabled, triggered 'except (ImportError, ModuleNotFoundError)'"
-            )
         except Exception as celery_err:
-            logger.error(
-                f"Celery broker is down ({celery_err}), falling back to threads."
-            )
+            logger.error(f"DNF Celery error: {celery_err}")
 
     transaction.on_commit(
         lambda: threading.Thread(
             target=_run_synchronous_user_update,
-            args=(
-                user_object.__class__,
-                user_id,
-                sender,
-                user_field_name,
-                content_field_name,
-            ),
+            kwargs={
+                "user_id": user_object.id,
+                "sender_model": sender,
+                "feed_class": feed_class,
+                "feed_id": target_feed_id,
+            },
             daemon=True,
         ).start()
     )
 
 
-def _run_synchronous_content_update(model_class, instance_id):
+def _run_synchronous_content_update(*, model_class, instance_id):
     try:
         instance = model_class.objects.get(id=instance_id)
         text_to_vectorize = instance.get_ready_text()
         if text_to_vectorize:
-            from django_neural_feed.services import RecommendationService
+            encoder = app_settings.ENCODER_CLASS
 
-            instance.embedding = RecommendationService.calculate_embedding(
-                text_to_vectorize
+            instance.embedding = encoder.text_to_vector(
+                text_to_vectorize, app_settings.MODEL_NAME
             )
             instance.save(update_fields=["embedding"])
-
-    except Exception as e:
-        logger.exception("DNF [SIGNAL ERROR] Caught exception during content update:")
+    except Exception:
+        logger.exception("DNF synchronous content update error:")
         raise
     finally:
         connection.close()
 
 
-def _run_synchronous_user_update(
-    user_model, user_id, sender_model, user_field_name, content_field_name
-):
+def _run_synchronous_user_update(*, user_id, sender_model, feed_class, feed_id):
     try:
-        user_object = user_model.objects.get(id=user_id)
-        filter_kwargs = {f"{user_field_name}_id": user_id}
-        likes_queryset = sender_model.objects.filter(**filter_kwargs)
+        from django_neural_feed.models import UserFeedProfile
 
-        from django_neural_feed.services import RecommendationService
+        encoder = app_settings.ENCODER_CLASS
 
-        vector = RecommendationService.calculate_user_embedding(
-            likes_queryset, content_field_name
+        u_field = feed_class.user_field_name
+        c_field = feed_class.content_field_name
+        limit = feed_class.user_likes_limit
+
+        prefix = f"{c_field}__" if c_field else ""
+        filter_kwargs = {f"{u_field}_id": user_id, f"{prefix}embedding__isnull": False}
+
+        recent_emb = list(
+            sender_model.objects.filter(**filter_kwargs)
+            .order_by("-id")[:limit]
+            .values_list(f"{prefix}embedding", flat=True)
         )
-        user_object.user_embedding = vector
-        user_object.save(update_fields=["user_embedding"])
-    except Exception as e:
-        import logging
 
-        logging.getLogger(__name__).error(f"DNF Background Thread Error (User): {e}")
+        if not recent_emb:
+            return
+
+        vector = encoder.average_vectors(recent_emb, limit)
+        if vector:
+            UserFeedProfile.objects.update_or_create(
+                user_id=user_id, feed_id=feed_id, defaults={"embedding": vector}
+            )
+    except Exception as e:
+        logger.error(f"DNF Background Thread Error (User): {e}")
     finally:
         connection.close()

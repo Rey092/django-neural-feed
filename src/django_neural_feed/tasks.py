@@ -1,26 +1,22 @@
+import logging
 from celery import shared_task
 from django.apps import apps
-from .services import RecommendationService
 from django.db.models import Model
-from . import mixins
+from django_neural_feed.conf import app_settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_model_from_path(model_path: str) -> type[Model] | None:
-    """
-    Helper function to dynamically look up a Django model class using
-    its 'app_label.model_name' identifier string.
-    """
-    model_class = None
+    """Dynamically looks up a Django model class using its 'app_label.model_name'."""
     try:
         app_label, model_name = model_path.split(".")
-        model_class = apps.get_model(app_label, model_name)
+        return apps.get_model(app_label, model_name)
     except Exception as e:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error (Celery) - can't get model from path ({model_path}): {e}")
-
-    return model_class
+        logger.error(
+            f"DNF Celery Error - cannot get model from path ({model_path}): {e}"
+        )
+        return None
 
 
 @shared_task
@@ -31,26 +27,30 @@ def generate_content_embedding_task(instance_id, model_path):
         if model_class is None:
             return
 
-        instance: mixins.NeuralRecommendMixin = model_class.objects.get(id=instance_id)  # type: ignore
-        text_to_vectorize = instance.get_ready_text()
+        instance = model_class.objects.get(id=instance_id)
+        text_to_vectorize = instance.get_ready_text()  # type: ignore
 
         if text_to_vectorize:
-            vector = RecommendationService.calculate_embedding(text_to_vectorize)
-            instance.embedding = vector
+            # Using the dynamic encoder from app settings
+            encoder = app_settings.ENCODER_CLASS
+            instance.embedding = encoder.text_to_vector(text_to_vectorize, app_settings.MODEL_NAME)  # type: ignore
             instance.save(update_fields=["embedding"])
 
     except Exception as e:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error (Celery) - can't generate embedding: {e}")
+        logger.error(f"DNF Celery Error - content embedding generation failed: {e}")
 
 
 @shared_task
 def update_user_embedding_task(
-    likes_model_path, users_model_path, user_id, user_field_name, content_field_name
+    likes_model_path,
+    users_model_path,
+    user_id,
+    user_field_name,
+    content_field_name,
+    feed_id,
+    user_likes_limit,
 ):
-    """Asynchronously recalculates the user profile vector based on recent interaction history."""
+    """Asynchronously recalculates the user profile vector for a specific feed."""
     try:
         likes_model = get_model_from_path(likes_model_path)
         user_model = get_model_from_path(users_model_path)
@@ -58,23 +58,35 @@ def update_user_embedding_task(
         if likes_model is None or user_model is None:
             return
 
-        # Safe lookup in case the user was purged from the DB while the job was queued
-        try:
-            user_object: mixins.NeuralUserMixin = user_model.objects.get(id=user_id)  # type: ignore
-        except user_model.DoesNotExist:
+        # Verify user still exists to avoid orphaned data if deleted recently
+        if not user_model.objects.filter(id=user_id).exists():
             return
 
-        filter_kwargs = {f"{user_field_name}_id": user_id}
-        likes_queryset = likes_model.objects.filter(**filter_kwargs)
+        from django_neural_feed.models import UserFeedProfile
 
-        vector = RecommendationService.calculate_user_embedding(
-            likes_queryset, content_field_name
+        prefix = f"{content_field_name}__" if content_field_name else ""
+        filter_kwargs = {
+            f"{user_field_name}_id": user_id,
+            f"{prefix}embedding__isnull": False,
+        }
+
+        recent_emb = list(
+            likes_model.objects.filter(**filter_kwargs)
+            .order_by("-id")[:user_likes_limit]
+            .values_list(f"{prefix}embedding", flat=True)
         )
-        user_object.user_embedding = vector
-        user_object.save(update_fields=["user_embedding"])
+
+        if not recent_emb:
+            return
+
+        # Generate average vector using the configured encoder
+        encoder = app_settings.ENCODER_CLASS
+        vector = encoder.average_vectors(recent_emb, user_likes_limit)
+
+        if vector:
+            UserFeedProfile.objects.update_or_create(
+                user_id=user_id, feed_id=feed_id, defaults={"embedding": vector}
+            )
 
     except Exception as e:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error (Celery) - can't generate user embedding: {e}")
+        logger.error(f"DNF Celery Error - user embedding generation failed: {e}")
