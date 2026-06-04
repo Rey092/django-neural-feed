@@ -78,10 +78,9 @@ jobs:
 
       - name: Install dependencies
         env:
-          UV_INDEX_URL: https://download.pytorch.org/whl/cpu
-          UV_EXTRA_INDEX_URL: https://pypi.org/simple
+          UV_TORCH_BACKEND: cpu
         run: |
-          uv pip install "django==${{ matrix.django-version }}" torch
+          uv pip install "django==${{ matrix.django-version }}"
 
           if [ -f requirements_dev.txt ]; then
             uv pip install -r requirements_dev.txt
