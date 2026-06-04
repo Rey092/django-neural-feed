@@ -70,7 +70,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-cache: false
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements_dev.txt
+            pyproject.toml
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -83,6 +87,11 @@ jobs:
           uv pip install "django==${{ matrix.django-version }}"
           if [ -f requirements_dev.txt ]; then uv pip install -r requirements_dev.txt; fi
           uv pip install -e '.[celery]'
+
+      - name: Show uv cache size
+        run: |
+          du -sh "$UV_CACHE_DIR" || true
+          find "$UV_CACHE_DIR" | head -20
 
       - name: Run Tests
         run: |
