@@ -85,4 +85,4 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --frozen pytest --cov=django_neural_feed --cov-report=term-missing --cov-branch
+          .venv/bin/pytest --cov=django_neural_feed --cov-report=term-missing --cov-branch
