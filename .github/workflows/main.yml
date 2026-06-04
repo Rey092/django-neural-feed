@@ -62,16 +62,27 @@ jobs:
       DATABASE_NAME: django_neural_feed_test_db
       DATABASE_USER: postgres
       DATABASE_PASSWORD: password
+      UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up uv and Python ${{ matrix.python-version }}
+      - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-          cache-dependency-glob: "requirements_dev.txt"
+          enable-cache: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Cache uv dependencies (Matrix Isolated)
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.uv-cache
+          key: ${{ runner.os }}-uv-py${{ matrix.python-version }}-dj${{ matrix.django-version }}-${{ hashFiles('requirements_dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-py${{ matrix.python-version }}-dj${{ matrix.django-version }}-
+            ${{ runner.os }}-uv-py${{ matrix.python-version }}-
 
       - name: Install Dependencies
         run: |
