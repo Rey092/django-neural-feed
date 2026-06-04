@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db.models import Value
+from django_neural_feed.encoders import DefaultVectorEncoder, BaseVectorEncoder
+from django.utils.module_loading import import_string
 
 # Fallback defaults if the developer skips these keys in settings.py
 DEFAULT_CONFIG = {
@@ -10,6 +12,7 @@ DEFAULT_CONFIG = {
     "WEIGHT_POPULARITY": 0.2,
     "USER_LIKES_LIMIT": 20,
     "CELERY_ENABLED": False,
+    "ENCODER_CLASS": DefaultVectorEncoder,
 }
 
 
@@ -77,6 +80,22 @@ class AppSettings:
     def CELERY_ENABLED(self) -> bool:
         """Flag toggling background task delegation for embedding generation pipelines."""
         return self._get_setting("CELERY_ENABLED")
+
+    @property
+    def ENCODER_CLASS(self) -> type[BaseVectorEncoder]:
+        """Dynamically resolves and returns the configured encoder class."""
+        setting_value = self._get_setting("ENCODER_CLASS")
+
+        if isinstance(setting_value, str):
+            try:
+                return import_string(setting_value)
+            except ImportError as e:
+                raise ImportError(
+                    f"DNF: Could not import custom encoder class at '{setting_value}'. "
+                    f"Check your DJANGO_NEURAL_FEED['ENCODER_CLASS'] setting. Error: {e}"
+                )
+
+        return setting_value
 
 
 # Global instantiation for direct import across the library ecosystem
