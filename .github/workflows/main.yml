@@ -19,7 +19,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-cache: true
+          enable-cache: true # Для линтера встроенный кэш ок, тут нет тяжелых зависимостей
 
       - name: Run Black
         run: uvx black --check src/ tests/
@@ -67,13 +67,24 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-          enable-cache: true
-          cache-dependency-glob: |
-            pyproject.toml
-            requirements_dev.txt
-          cache-suffix: "-dj${{ matrix.django-version }}"
+          enable-cache: false
+
+      - name: Get uv cache directory
+        id: uv-cache
+        run: echo "dir=$(uv cache dir)" >> $GITHUB_OUTPUT
+
+      - name: Persistent uv cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.uv-cache.outputs.dir }}
+          key: uv-wheels-${{ runner.os }}-${{ matrix.python-version }}-dj${{ matrix.django-version }}-${{ hashFiles('pyproject.toml', 'requirements_dev.txt') }}
+          restore-keys: |
+            uv-wheels-${{ runner.os }}-${{ matrix.python-version }}-dj${{ matrix.django-version }}-
 
       - name: Install dependencies
+        env:
+          UV_INDEX_URL: https://download.pytorch.org/whl/cpu
+          UV_EXTRA_INDEX_URL: https://pypi.org/simple
         run: |
           uv pip install torch "django==${{ matrix.django-version }}"
 
