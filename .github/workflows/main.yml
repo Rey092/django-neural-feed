@@ -77,10 +77,11 @@ jobs:
           cache-suffix: "-dj${{ matrix.django-version }}"
 
       - name: Install dependencies
+        env:
+          UV_INDEX_URL: https://download.pytorch.org/whl/cpu
+          UV_EXTRA_INDEX_URL: https://pypi.org/simple
         run: |
-          uv pip install "django==${{ matrix.django-version }}"
-
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install "django==${{ matrix.django-version }}" torch
 
           if [ -f requirements_dev.txt ]; then
             uv pip install -r requirements_dev.txt
