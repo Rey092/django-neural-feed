@@ -20,7 +20,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "requirements_dev.txt"
 
-      - name: Install Linting Tools
+      - name: Install linting tools
         run: |
           uv pip install black flake8
 
@@ -37,8 +37,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10"] #, "3.11", "3.12"]
-        django-version: ["5.0"] #["4.2", "5.0"]
+        python-version: ["3.10"]
+        django-version: ["4.2", "5.0"]
 
     services:
       postgres:
@@ -62,31 +62,32 @@ jobs:
       DATABASE_NAME: django_neural_feed_test_db
       DATABASE_USER: postgres
       DATABASE_PASSWORD: password
-      UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up uv
+      - name: Set up uv and Python
         uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: |
-            requirements_dev.txt
             pyproject.toml
+            requirements_dev.txt
+          cache-suffix: "-dj${{ matrix.django-version }}"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           uv pip install "django==${{ matrix.django-version }}"
-          if [ -f requirements_dev.txt ]; then uv pip install -r requirements_dev.txt; fi
+
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+          if [ -f requirements_dev.txt ]; then
+            uv pip install -r requirements_dev.txt
+          fi
+
           uv pip install -e '.[celery]'
 
-      - name: Show uv cache size
-        run: |
-          du -sh "$UV_CACHE_DIR" || true
-          find "$UV_CACHE_DIR" | head -20
-
-      - name: Run Tests
+      - name: Run tests
         run: |
           uv run pytest --cov=django_neural_feed --cov-report=term-missing --cov-branch
