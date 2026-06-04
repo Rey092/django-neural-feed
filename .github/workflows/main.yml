@@ -7,30 +7,25 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+env:
+  UV_TORCH_BACKEND: cpu
+
 jobs:
   linting:
     runs-on: ubuntu-latest
-    env:
-      UV_TORCH_BACKEND: cpu
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up uv and Python
+      - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.13"
           enable-cache: true
-          cache-dependency-glob: "requirements_dev.txt"
-
-      - name: Install linting tools
-        run: |
-          uv pip install black flake8
 
       - name: Run Black
-        run: uv run black --check src/ tests/
+        run: uv run --no-project black --check src/ tests/
 
       - name: Run Flake8
-        run: uv run flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        run: uv run --no-project flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
   tests:
     runs-on: ubuntu-latest
@@ -64,7 +59,6 @@ jobs:
       DATABASE_NAME: django_neural_feed_test_db
       DATABASE_USER: postgres
       DATABASE_PASSWORD: password
-      UV_TORCH_BACKEND: cpu
 
     steps:
       - uses: actions/checkout@v4
@@ -81,11 +75,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install torch --torch-backend=cpu --index-strategy unsafe-best-match
-          uv pip install "django==${{ matrix.django-version }}"
+          uv pip install torch "django==${{ matrix.django-version }}"
 
           if [ -f requirements_dev.txt ]; then
-            uv pip install -r requirements_dev.txt --torch-backend=cpu
+            uv pip install -r requirements_dev.txt
           fi
 
           uv pip install -e '.[celery]'
