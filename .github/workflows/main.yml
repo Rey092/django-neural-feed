@@ -75,6 +75,9 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Create venv
+        run: uv venv
+
       - name: Cache uv dependencies (Matrix Isolated)
         uses: actions/cache@v4
         with:
