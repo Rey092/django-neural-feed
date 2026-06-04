@@ -32,8 +32,7 @@ def test_calculate_embedding_calls_sentence_transformers_correctly(mocker):
     result = RecommendationService.calculate_embedding(test_text)
 
     mock_transformer_class.assert_called_once_with(
-        "paraphrase-multilingual-MiniLM-L12-v2", 
-        local_files_only=True
+        "paraphrase-multilingual-MiniLM-L12-v2", local_files_only=True
     )
     mock_model_instance.encode.assert_called_once_with(test_text, convert_to_numpy=True)
 
