@@ -13,6 +13,14 @@ import pytest
 from django_neural_feed.encoders import DefaultVectorEncoder, BaseVectorEncoder
 import numpy as np
 import time
+from types import SimpleNamespace
+from django.test import override_settings
+from django_neural_feed.tasks import (
+    get_model_from_path,
+    generate_content_embedding_task,
+    update_user_embedding_task,
+)
+
 
 from django_neural_feed.tasks import (
     generate_content_embedding_task,
@@ -394,3 +402,349 @@ def test_default_encoder_fallback_download_flow(mock_logger):
         model = DefaultVectorEncoder._get_model("download-model")
         assert model is not None
         assert mock_transformer_cls.call_count == 2
+
+
+def test_get_model_from_path_malformed():
+    # Missing dot triggers split exception
+    assert get_model_from_path("InvalidModelPathNoDot") is None
+
+
+def test_generate_content_embedding_task_invalid_model():
+    # Early return when model cannot be resolved
+    assert generate_content_embedding_task(1, "invalid.ModelName") is None
+
+
+def test_update_user_embedding_task_missing_models():
+    """Covers line 64: Early return if likes or user model resolves to None."""
+    result = update_user_embedding_task(
+        likes_django_model_path="invalid.LikesModel",
+        users_django_model_path="invalid.UserModel",
+        user_id=1,
+        user_field_name="user",
+        content_field_name="article",
+        feed_id="test_feed",
+        user_likes_limit=5,
+    )
+    assert result is None
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_update_user_embedding_task_user_not_found(mock_get_model):
+    """Covers line 68: Early return if the user does not exist in the DB."""
+    mock_user_model = MagicMock()
+    mock_user_model.objects.filter.return_value.exists.return_value = False
+
+    # First call returns valid likes model, second returns user model that reports user missing
+    mock_get_model.side_effect = [MagicMock(), mock_user_model]
+
+    result = update_user_embedding_task(
+        likes_django_model_path="tests.TestLike",
+        users_django_model_path="auth.User",
+        user_id=404,
+        user_field_name="user",
+        content_field_name="article",
+        feed_id="test_feed",
+        user_likes_limit=5,
+    )
+    assert result is None
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_update_user_embedding_task_no_embeddings(mock_get_model):
+    """Covers line 85: Early return if user has no likes containing embeddings."""
+    mock_user_model = MagicMock()
+    mock_user_model.objects.filter.return_value.exists.return_value = True
+
+    mock_likes_model = MagicMock()
+    # Emulate an empty list returned by values_list()
+    mock_likes_model.objects.filter.return_value.order_by.return_value.__getitem__.return_value.values_list.return_value = (
+        []
+    )
+
+    mock_get_model.side_effect = [mock_likes_model, mock_user_model]
+
+    result = update_user_embedding_task(
+        likes_django_model_path="tests.TestLike",
+        users_django_model_path="auth.User",
+        user_id=1,
+        user_field_name="user",
+        content_field_name="article",
+        feed_id="test_feed",
+        user_likes_limit=5,
+    )
+    assert result is None
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_update_user_embedding_task_exception_handling(mock_get_model):
+    """Covers lines 96-97: Catches and logs unexpected database/runtime crashes."""
+    mock_get_model.side_effect = RuntimeError("Database connection timed out")
+
+    # Should not crash the Celery worker; must catch internally and return None
+    update_user_embedding_task(
+        likes_django_model_path="tests.TestLike",
+        users_django_model_path="auth.User",
+        user_id=1,
+        user_field_name="user",
+        content_field_name="article",
+        feed_id="test_feed",
+        user_likes_limit=5,
+    )
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_generate_content_embedding_task_fallback_and_error_flow(
+    mock_get_model, monkeypatch
+):
+    """Covers lines 35->exit, 37->40, and 44-45 by patching the internal config dict."""
+    mock_model = MagicMock()
+    mock_instance = MagicMock()
+
+    # Text must be truthy to pass line 35
+    mock_instance.get_ready_text.return_value = "Valid text to encode"
+    mock_model.objects.get.return_value = mock_instance
+    mock_get_model.return_value = mock_model
+
+    # Patch the internal dictionary because properties have no setters
+    fake_config = {"MODEL_NAME": "fallback-model-name"}
+    monkeypatch.setattr(app_settings, "_user_config", fake_config)
+
+    # Mock _get_setting to return a broken encoder class that raises an error
+    mock_encoder = MagicMock()
+    mock_encoder.text_to_vector.side_effect = RuntimeError("Encoder crash")
+    monkeypatch.setattr(
+        app_settings,
+        "_get_setting",
+        lambda key: mock_encoder if key == "ENCODER_CLASS" else fake_config.get(key),
+    )
+
+    # embedding_model_name=None forces execution of lines 37-40
+    generate_content_embedding_task(
+        instance_id=1, django_model_path="tests.TestArticle", embedding_model_name=None
+    )
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+@patch("django_neural_feed.encoders.BaseVectorEncoder.average_vectors")
+def test_update_user_embedding_task_successful_and_empty_vector_flow(
+    mock_average, mock_get_model
+):
+    """Covers lines 91->exit and 96-97 by simulating successful vector saving and profile crash."""
+    mock_user_model = MagicMock()
+    mock_user_model.objects.filter.return_value.exists.return_value = True
+
+    mock_likes_model = MagicMock()
+    # Return non-empty list to pass the 'if not recent_emb' guard on line 85
+    mock_likes_model.objects.filter.return_value.order_by.return_value.__getitem__.return_value.values_list.return_value = [
+        [0.1, 0.2]
+    ]
+
+    mock_get_model.side_effect = [mock_likes_model, mock_user_model]
+
+    mock_average.return_value = [0.1, 0.2, 0.3]
+
+    with patch(
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+    ) as mock_update:
+        update_user_embedding_task(
+            likes_django_model_path="tests.TestLike",
+            users_django_model_path="auth.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="article",
+            feed_id="test_feed",
+            user_likes_limit=5,
+        )
+        assert mock_update.called
+
+    mock_average.return_value = []  # Empty vector skips update_or_create
+    update_user_embedding_task(
+        likes_django_model_path="tests.TestLike",
+        users_django_model_path="auth.User",
+        user_id=1,
+        user_field_name="user",
+        content_field_name="article",
+        feed_id="test_feed",
+        user_likes_limit=5,
+    )
+
+    mock_average.return_value = [0.1, 0.2, 0.3]
+
+    mock_get_model.side_effect = [mock_likes_model, mock_user_model]
+
+    with patch(
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+    ) as mock_update_crash:
+        mock_update_crash.side_effect = RuntimeError(
+            "Database integrity violation during save"
+        )
+
+        update_user_embedding_task(
+            likes_django_model_path="tests.TestLike",
+            users_django_model_path="auth.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="article",
+            feed_id="test_feed",
+            user_likes_limit=5,
+        )
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+@patch("django_neural_feed.encoders.BaseVectorEncoder.average_vectors")
+def test_update_user_embedding_task_save_flow(mock_average, mock_get_model):
+    """Verifies that update_or_create is called when a valid vector is generated."""
+    mock_user_model = MagicMock()
+    mock_user_model.objects.filter.return_value.exists.return_value = True
+
+    mock_likes_model = MagicMock()
+    mock_likes_model.objects.filter.return_value.order_by.return_value.__getitem__.return_value.values_list.return_value = [
+        [0.1, 0.2]
+    ]
+
+    mock_get_model.side_effect = [mock_likes_model, mock_user_model]
+    mock_average.return_value = [0.1, 0.2, 0.3]
+
+    with patch(
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+    ) as mock_update:
+        update_user_embedding_task(
+            likes_django_model_path="tests.TestLike",
+            users_django_model_path="auth.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="article",
+            feed_id="test_feed",
+            user_likes_limit=5,
+        )
+        assert mock_update.call_count == 1
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_update_user_embedding_task_skip_empty_vector_flow(mock_get_model, monkeypatch):
+    """Covers lines 91->exit by mocking numpy to force an empty vector output."""
+    mock_user_model = MagicMock()
+    mock_user_model.objects.filter.return_value.exists.return_value = True
+
+    mock_likes_model = MagicMock()
+    # Pass non-empty list so we easily bypass line 85 check (if not recent_emb)
+    mock_likes_model.objects.filter.return_value.order_by.return_value.__getitem__.return_value.values_list.return_value = [
+        [0.1, 0.2]
+    ]
+
+    mock_get_model.side_effect = [mock_likes_model, mock_user_model]
+
+    # Force np.mean (or whatever math is used under the hood) to return an empty list
+    # which is Falsy and skips update_or_create block
+    monkeypatch.setattr(
+        np, "mean", lambda *args, **kwargs: MagicMock(tolist=lambda: [])
+    )
+    # In case code uses a direct tolist() call on a mocked array structure, or returns [] directly:
+    monkeypatch.setattr(
+        np, "asarray", lambda *args, **kwargs: MagicMock(tolist=lambda: [])
+    )
+
+    with patch(
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+    ) as mock_update_skip:
+        update_user_embedding_task(
+            likes_django_model_path="tests.TestLike",
+            users_django_model_path="auth.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="article",
+            feed_id="test_feed",
+            user_likes_limit=5,
+        )
+        # Now update_or_create MUST be skipped because the computed vector evaluates to False
+        assert mock_update_skip.call_count == 0
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_generate_content_embedding_task_empty_text_flow(mock_get_model):
+    """Covers line 35->exit by simulating an empty text string."""
+    mock_model = MagicMock()
+    mock_instance = MagicMock()
+
+    # Empty text makes line 35 evaluate to False and triggers early exit
+    mock_instance.get_ready_text.return_value = ""
+    mock_model.objects.get.return_value = mock_instance
+    mock_get_model.return_value = mock_model
+
+    generate_content_embedding_task(
+        instance_id=1,
+        django_model_path="tests.TestArticle",
+        embedding_model_name="some-model",
+    )
+    # Ensure save was never called since there was nothing to vectorize
+    assert mock_instance.save.call_count == 0
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_generate_content_embedding_task_success_with_default_model(
+    mock_get_model, monkeypatch
+):
+    """Covers lines 37->40 by mocking the entire app_settings object as a simple namespace."""
+    mock_model = MagicMock()
+    mock_instance = MagicMock()
+    mock_instance.get_ready_text.return_value = "Valid content text"
+    mock_model.objects.get.return_value = mock_instance
+    mock_get_model.return_value = mock_model
+
+    mock_encoder = MagicMock()
+    mock_encoder.text_to_vector.return_value = [0.1, 0.2, 0.3]
+
+    # Create a pure Python object with standard attributes (no read-only properties)
+    fake_settings = SimpleNamespace(
+        MODEL_NAME="mocked-default-model-name", ENCODER_CLASS=mock_encoder
+    )
+
+    # Patch app_settings directly inside the tasks module to bypass original property logic
+    monkeypatch.setattr("django_neural_feed.tasks.app_settings", fake_settings)
+
+    # Passing None forces line 38 to read fake_settings.MODEL_NAME and move to line 40
+    generate_content_embedding_task(
+        instance_id=1, django_model_path="tests.TestArticle", embedding_model_name=None
+    )
+
+    # Verify everything executed smoothly
+    assert mock_instance.embedding == [0.1, 0.2, 0.3]
+    assert mock_instance.save.call_count == 1
+
+
+@patch("django_neural_feed.tasks.apps.get_model")
+def test_generate_content_embedding_task_with_explicit_model_name(
+    mock_get_model, monkeypatch
+):
+    """Covers the False branch of line 37 (the 37->40 jump) by passing an explicit model name."""
+    mock_model = MagicMock()
+    mock_instance = MagicMock()
+    mock_instance.get_ready_text.return_value = "Valid content text"
+    mock_model.objects.get.return_value = mock_instance
+    mock_get_model.return_value = mock_model
+
+    mock_encoder = MagicMock()
+    mock_encoder.text_to_vector.return_value = [0.1, 0.2, 0.3]
+
+    from django_neural_feed.conf import app_settings
+
+    # monkeypatch.setattr(app_settings, "ENCODER_CLASS", mock_encoder)
+    def mock_get_setting(key):
+        if key == "ENCODER_CLASS":
+            return mock_encoder
+        return None
+
+    monkeypatch.setattr(app_settings, "_get_setting", mock_get_setting)
+
+    # Pass an explicit string. Line 37 evaluates to False, jumping directly to line 40
+    generate_content_embedding_task(
+        instance_id=1,
+        django_model_path="tests.TestArticle",
+        embedding_model_name="explicit-custom-model",
+    )
+
+    # Verify that the explicit model name was passed to the encoder, NOT the default one
+    mock_encoder.text_to_vector.assert_called_once_with(
+        "Valid content text", "explicit-custom-model"
+    )
+    assert mock_instance.save.call_count == 1
