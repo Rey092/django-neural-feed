@@ -43,7 +43,7 @@ jobs:
         env:
           POSTGRES_DB: django_neural_feed_test_db
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
+          POSTGRES_PASSWORD: mysecretpassword
         ports:
           - 5432:5432
         options: >-
@@ -58,7 +58,7 @@ jobs:
       DATABASE_PORT: "5432"
       DATABASE_NAME: django_neural_feed_test_db
       DATABASE_USER: postgres
-      DATABASE_PASSWORD: password
+      DATABASE_PASSWORD: mysecretpassword
 
     steps:
       - uses: actions/checkout@v4

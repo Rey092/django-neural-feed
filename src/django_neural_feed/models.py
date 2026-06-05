@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 from pgvector.django import VectorField
+from django_neural_feed.conf import app_settings
 
 
 class UserFeedProfile(models.Model):
@@ -10,7 +11,11 @@ class UserFeedProfile(models.Model):
 
     feed_id = models.CharField(max_length=64, db_index=True)
 
-    embedding = VectorField(dimensions=384, null=True, blank=True)
+    embedding = VectorField(
+        dimensions=getattr(app_settings, "VECTOR_DIMENSION", 384),
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         unique_together = ("user", "feed_id")

@@ -89,6 +89,9 @@ class BaseNeuralFeed:
 
         target_feed_id = cls.get_setting("feed_id")
 
+        if not target_feed_id:
+            return None
+
         try:
             profile = UserFeedProfile.objects.filter(
                 user_id=user.id, feed_id=target_feed_id

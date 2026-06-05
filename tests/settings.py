@@ -7,7 +7,7 @@ DATABASES = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "django_neural_feed_test_db",
         "USER": "postgres",
-        "PASSWORD": "password",
+        "PASSWORD": "mysecretpassword",
         "HOST": "localhost",
         "PORT": "5432",
         "TEST": {
@@ -23,6 +23,9 @@ INSTALLED_APPS = [
     "tests",
 ]
 
-AUTH_USER_MODEL = "tests.TestUser"
+DJANGO_NEURAL_FEED = {
+    "FEEDS": ["tests.feeds.TestParentFeed"],
+    "VECTOR_DIMENSION": 3,
+}
 
 USE_TZ = True

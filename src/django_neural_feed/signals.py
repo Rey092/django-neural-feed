@@ -72,7 +72,7 @@ def register_feed_signals(feed_class):
         user_field = feed_class.get_setting("user_field_name")
         content_field = feed_class.get_setting("content_field_name")
 
-        if not user_field or content_field:
+        if not user_field or not content_field:
             raise ValueError(
                 "Specify user_field_name and content_field_name in your Feed class for model mode."
             )
@@ -89,7 +89,8 @@ def _user_like_changed_model(sender, instance, created, *, feed_class, **kwargs)
     if not created:
         return
     try:
-        user_object = feed_class.get_setting("user_field_name")
+        user_field_name = feed_class.get_setting("user_field_name")
+        user_object = getattr(instance, user_field_name)
         _trigger_user_embedding_update(
             user_object=user_object, sender=sender, feed_class=feed_class
         )
@@ -211,9 +212,9 @@ def _run_synchronous_user_update(*, user_id, sender_model, feed_class, feed_id):
 
         encoder = app_settings.ENCODER_CLASS
 
-        u_field = feed_class.user_field_name
-        c_field = feed_class.content_field_name
-        limit = feed_class.user_likes_limit
+        u_field = feed_class.get_setting("user_field_name")
+        c_field = feed_class.get_setting("content_field_name")
+        limit = feed_class.get_setting("user_likes_limit")
 
         prefix = f"{c_field}__" if c_field else ""
         filter_kwargs = {f"{u_field}_id": user_id, f"{prefix}embedding__isnull": False}
