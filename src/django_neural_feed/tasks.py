@@ -20,20 +20,25 @@ def get_model_from_path(model_path: str) -> type[Model] | None:
 
 
 @shared_task
-def generate_content_embedding_task(instance_id, model_path):
+def generate_content_embedding_task(
+    instance_id, django_model_path, embedding_model_name=None
+):
     """Asynchronously calculates and saves vector embeddings for content models."""
     try:
-        model_class = get_model_from_path(model_path)
-        if model_class is None:
+        django_model = get_model_from_path(django_model_path)
+        if django_model is None:
             return
 
-        instance = model_class.objects.get(id=instance_id)
+        instance = django_model.objects.get(id=instance_id)
         text_to_vectorize = instance.get_ready_text()  # type: ignore
 
         if text_to_vectorize:
+
+            if embedding_model_name is None:
+                embedding_model_name = app_settings.MODEL_NAME
             # Using the dynamic encoder from app settings
             encoder = app_settings.ENCODER_CLASS
-            instance.embedding = encoder.text_to_vector(text_to_vectorize, app_settings.MODEL_NAME)  # type: ignore
+            instance.embedding = encoder.text_to_vector(text_to_vectorize, embedding_model_name)  # type: ignore
             instance.save(update_fields=["embedding"])
 
     except Exception as e:
@@ -42,8 +47,8 @@ def generate_content_embedding_task(instance_id, model_path):
 
 @shared_task
 def update_user_embedding_task(
-    likes_model_path,
-    users_model_path,
+    likes_django_model_path,
+    users_django_model_path,
     user_id,
     user_field_name,
     content_field_name,
@@ -52,14 +57,14 @@ def update_user_embedding_task(
 ):
     """Asynchronously recalculates the user profile vector for a specific feed."""
     try:
-        likes_model = get_model_from_path(likes_model_path)
-        user_model = get_model_from_path(users_model_path)
+        likes_django_model = get_model_from_path(likes_django_model_path)
+        user_django_model = get_model_from_path(users_django_model_path)
 
-        if likes_model is None or user_model is None:
+        if likes_django_model is None or user_django_model is None:
             return
 
         # Verify user still exists to avoid orphaned data if deleted recently
-        if not user_model.objects.filter(id=user_id).exists():
+        if not user_django_model.objects.filter(id=user_id).exists():
             return
 
         from django_neural_feed.models import UserFeedProfile
@@ -71,7 +76,7 @@ def update_user_embedding_task(
         }
 
         recent_emb = list(
-            likes_model.objects.filter(**filter_kwargs)
+            likes_django_model.objects.filter(**filter_kwargs)
             .order_by("-id")[:user_likes_limit]
             .values_list(f"{prefix}embedding", flat=True)
         )

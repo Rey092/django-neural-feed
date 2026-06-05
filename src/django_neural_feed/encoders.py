@@ -30,28 +30,31 @@ class BaseVectorEncoder:
 class DefaultVectorEncoder(BaseVectorEncoder):
     """
     Built-in default encoder using the 'sentence-transformers' library.
-    Generates embeddings locally without external API calls.
     """
 
-    _model_instance = None
+    _model_instances = {}
 
     @classmethod
     def _get_model(cls, model_name: str):
-        """Lazy loading of the embedding model to save memory on app startup."""
-        if cls._model_instance is None:
+        if model_name not in cls._model_instances:
             try:
                 from sentence_transformers import SentenceTransformer
 
-                # Model is downloaded automatically on the first execution
-                cls._model_instance = SentenceTransformer(model_name)
+                try:
+                    cls._model_instances[model_name] = SentenceTransformer(
+                        model_name, local_files_only=True
+                    )
+                except Exception:
+                    logger.info(
+                        f"DNF: Model '{model_name}' not found locally. Downloading..."
+                    )
+                    cls._model_instances[model_name] = SentenceTransformer(
+                        model_name, local_files_only=False
+                    )
             except ImportError:
-                logger.error(
-                    "DNF Error: 'sentence-transformers' package is missing. "
-                    "Please install it via 'pip install sentence-transformers' "
-                    "or configure a custom ENCODER_CLASS."
-                )
+                logger.error("DNF Error: 'sentence-transformers' package is missing.")
                 raise
-        return cls._model_instance
+        return cls._model_instances[model_name]
 
     @classmethod
     def text_to_vector(cls, text: str, model_name: str) -> list[float]:
@@ -60,7 +63,9 @@ class DefaultVectorEncoder(BaseVectorEncoder):
         try:
             model = cls._get_model(model_name)
             # convert_to_numpy=True ensures we get a clean arrays back
-            embedding = model.encode(text, convert_to_numpy=True)
+            embedding = model.encode(
+                text, convert_to_numpy=True, normalize_embeddings=True
+            )
             return embedding.tolist()
         except Exception as e:
             logger.error(f"DNF Default embedding generation failed: {e}")

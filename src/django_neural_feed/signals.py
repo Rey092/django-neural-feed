@@ -5,11 +5,11 @@ from django.db import connection, transaction
 from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
 from django_neural_feed.conf import app_settings
+from django.apps import apps
 
 logger = logging.getLogger(__name__)
 
 
-@receiver(post_save)
 def generate_content_embedding(sender, instance, created, **kwargs):
     from django_neural_feed.mixins import NeuralRecommendMixin
 
@@ -49,7 +49,11 @@ def generate_content_embedding(sender, instance, created, **kwargs):
 
 def register_feed_signals(feed_class):
     """Entry point to bind signals based on feed configuration."""
-    like_target = feed_class.interaction_model
+    like_target = feed_class.get_setting("interaction_django_model")
+
+    if isinstance(like_target, str):
+        like_target = apps.get_model(like_target)
+
     if not like_target:
         return
 
@@ -65,9 +69,10 @@ def register_feed_signals(feed_class):
             weak=False,
         )
     else:
-        if not getattr(feed_class, "user_field_name", None) or not getattr(
-            feed_class, "content_field_name", None
-        ):
+        user_field = feed_class.get_setting("user_field_name")
+        content_field = feed_class.get_setting("content_field_name")
+
+        if not user_field or content_field:
             raise ValueError(
                 "Specify user_field_name and content_field_name in your Feed class for model mode."
             )
@@ -84,7 +89,7 @@ def _user_like_changed_model(sender, instance, created, *, feed_class, **kwargs)
     if not created:
         return
     try:
-        user_object = getattr(instance, feed_class.user_field_name)
+        user_object = feed_class.get_setting("user_field_name")
         _trigger_user_embedding_update(
             user_object=user_object, sender=sender, feed_class=feed_class
         )
@@ -103,7 +108,7 @@ def _user_like_changed_m2m(
 
         User = get_user_model()
 
-        user_field_name = getattr(feed_class, "user_field_name", None)
+        user_field_name = feed_class.get_setting("user_field_name")
 
         # Auto-discover relation fields if not explicitly defined
         if not user_field_name:
@@ -145,7 +150,9 @@ def _user_like_changed_m2m(
 
 def _trigger_user_embedding_update(*, user_object, sender, feed_class):
     """Routes the update to Celery or a background thread."""
-    target_feed_id = getattr(feed_class, "linked_feed_id", None) or feed_class.feed_id
+    target_feed_id = (
+        feed_class.parent_feed.feed_id if feed_class.parent_feed else feed_class.feed_id
+    )
 
     if app_settings.CELERY_ENABLED:
         try:
@@ -159,8 +166,8 @@ def _trigger_user_embedding_update(*, user_object, sender, feed_class):
                 user_id=user_object.id,
                 user_field_name=feed_class.user_field_name,
                 content_field_name=feed_class.content_field_name,
-                feed_id=target_feed_id,  # Передаем ID фида
-                user_likes_limit=feed_class.user_likes_limit,  # Передаем лимит
+                feed_id=target_feed_id,
+                user_likes_limit=feed_class.user_likes_limit,
             )
             return
         except Exception as celery_err:
@@ -229,3 +236,14 @@ def _run_synchronous_user_update(*, user_id, sender_model, feed_class, feed_id):
         logger.error(f"DNF Background Thread Error (User): {e}")
     finally:
         connection.close()
+
+
+def register_content_signals(content_django_model):
+    """Dynamically connects content embedding generation to specific models only."""
+    from django.db.models.signals import post_save
+
+    post_save.connect(
+        receiver=generate_content_embedding,
+        sender=content_django_model,
+        dispatch_uid=f"dnf_content_{content_django_model._meta.label_lower}",
+    )

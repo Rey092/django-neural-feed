@@ -23,8 +23,8 @@ class AppSettings:
     """
 
     def __init__(self):
-        # Using a unified short prefix 'DNF_CONFIG' to match the official documentation
-        self._user_config = getattr(settings, "DNF_CONFIG", {})
+        # Using a unified short prefix 'DJANGO_NEURAL_FEED' to match the official documentation
+        self._user_config = getattr(settings, "DJANGO_NEURAL_FEED", {})
 
     def _get_setting(self, key):
         """Internal helper to resolve user configurations with built-in fallbacks."""
@@ -96,6 +96,33 @@ class AppSettings:
                 )
 
         return setting_value
+
+    def get_registered_feeds(self) -> list:
+        """
+        Loads and returns configuration classes defined by user in Django settings.
+        Example in settings.py:
+        DJANGO_NEURAL_FEED = {
+            "FEEDS": ["apps.articles.feeds.MainArticlesFeed", "apps.shop.feeds.ProductsFeed"]
+        }
+        """
+        from django.utils.module_loading import import_string
+        from django.conf import settings
+
+        dnf_settings = getattr(settings, "DJANGO_NEURAL_FEED", {})
+        feed_paths = dnf_settings.get("FEEDS", [])
+
+        feed_classes = []
+        for path in feed_paths:
+            try:
+                feed_class = import_string(path)
+                feed_classes.append(feed_class)
+            except ImportError as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(f"DNF: Cannot import feed class from path '{path}': {e}")
+
+        return feed_classes
 
 
 # Global instantiation for direct import across the library ecosystem
