@@ -4,6 +4,13 @@ from django.db import transaction
 from tests.models import TestArticle, TestLikeModel
 from tests.feeds import TestParentFeed, TestChildFeed
 from django_neural_feed.models import UserFeedProfile
+from django_neural_feed.mixins import NeuralRecommendMixin
+from django.apps import apps
+from django_neural_feed.conf import app_settings
+import sys
+from unittest.mock import MagicMock, patch
+import pytest
+from django_neural_feed.encoders import DefaultVectorEncoder, BaseVectorEncoder
 import numpy as np
 import time
 
@@ -118,3 +125,272 @@ def test_celery_tasks_execution(settings, monkeypatch):
     profile = UserFeedProfile.objects.filter(user_id=user.id, feed_id="test_parent").first()  # type: ignore
     assert profile is not None
     assert np.allclose(profile.embedding, [0.57735026, 0.57735026, 0.57735026])
+
+
+def test_mixin_not_implemented_error():
+    # Test abstract behavior
+    class BadModel(NeuralRecommendMixin):
+        pass
+
+    instance = BadModel()
+    with pytest.raises(NotImplementedError):
+        instance.get_ready_text()
+
+
+@pytest.mark.django_db
+def test_user_feed_profile_str():
+    # Cover __str__ representation
+    user = User.objects.create_user(username="teststruser", password="123")
+    profile = UserFeedProfile(user=user, feed_id="test_parent")
+
+    assert str(profile) == "teststruser - test_parent"
+
+
+@pytest.mark.django_db
+def test_feed_get_candidates_and_fallback():
+    user = User.objects.create_user(username="newbie", password="123")
+
+    a1 = TestArticle.objects.create(title="Article 1")
+    a2 = TestArticle.objects.create(title="Article 2")
+    a3 = TestArticle.objects.create(title="Article 3")
+
+    # 1. Fallback: User has no profile vector yet
+    # Should return recent items ordered by -id
+    feed_items = TestParentFeed.get_feed(user=user, limit=2)
+    assert len(feed_items) == 2
+    assert feed_items[0] == a3
+    assert feed_items[1] == a2
+
+    # 2. Unauthenticated user fallback
+    anon_feed = TestParentFeed.get_feed(user=None, limit=1)
+    assert len(anon_feed) == 1
+    assert anon_feed[0] == a3
+
+    # 3. Excluded IDs logic
+    # Assume user already saw a3 and a2
+    excluded = TestParentFeed.get_feed(user=user, excluded_ids=[a2.id, a3.id], limit=5)  # type: ignore
+    assert len(excluded) == 1
+    assert excluded[0] == a1
+
+
+def test_apps_config_ready_branch_coverage(monkeypatch):
+    """Forces the ready() loop to cover both True and False branches of line 21."""
+
+    # Feed 1: Has a string model path (covers lines 22-25)
+    class StringModelFeed:
+        content_django_model = "tests.TestArticle"
+        feed_id = "string_feed"
+
+        @classmethod
+        def get_setting(cls, key):
+            return "string_feed"
+
+    # Feed 2: Has no model at all (covers the False jump 21->17)
+    class EmptyModelFeed:
+        content_django_model = None
+        feed_id = "empty_feed"
+
+        @classmethod
+        def get_setting(cls, key):
+            return "empty_feed"
+
+    # Mock the settings to return BOTH feeds sequentially
+    from django_neural_feed.conf import app_settings
+
+    monkeypatch.setattr(
+        app_settings, "get_registered_feeds", lambda: [StringModelFeed, EmptyModelFeed]
+    )
+
+    # Stub signal registrations to avoid side effects
+    import django_neural_feed.signals
+
+    monkeypatch.setattr(
+        django_neural_feed.signals, "register_feed_signals", lambda feed: None
+    )
+    monkeypatch.setattr(
+        django_neural_feed.signals, "register_content_signals", lambda model: None
+    )
+
+    # Trigger ready manually
+    config = apps.get_app_config("django_neural_feed")
+    config.ready()
+
+
+def test_conf_encoder_import_error(monkeypatch):
+    """Verifies custom ImportError is raised when string path is invalid."""
+    # Force the internal config dict to return a broken string path
+    fake_config = {"ENCODER_CLASS": "django_neural_feed.broken.MissingEncoderClass"}
+    monkeypatch.setattr(app_settings, "_user_config", fake_config)
+
+    with pytest.raises(ImportError) as exc_info:
+        _ = app_settings.ENCODER_CLASS
+
+    assert "DNF: Could not import custom encoder class" in str(exc_info.value)
+
+
+def test_conf_feed_import_error(monkeypatch):
+    """Verifies broken feed paths are gracefully caught and logged."""
+    fake_config = {"FEEDS": ["django_neural_feed.broken.MissingFeedClass"]}
+    monkeypatch.setattr(app_settings, "_user_config", fake_config)
+
+    feeds = app_settings.get_registered_feeds()
+    assert len(feeds) == 0
+
+
+from django_neural_feed.encoders import BaseVectorEncoder
+
+
+def test_base_encoder_abstract_raises():
+    with pytest.raises(NotImplementedError):
+        BaseVectorEncoder.text_to_vector("text", "model")
+
+
+def test_base_encoder_average_vectors_handling():
+    # Empty list must return empty list safely
+    assert BaseVectorEncoder.average_vectors([], limit=5) == []
+
+    # Invalid dimensions must trigger exception block and return empty list
+    broken_matrix = [[1.0], [1.0, 2.0, 3.0]]
+    assert BaseVectorEncoder.average_vectors(broken_matrix, limit=5) == []
+
+
+def test_base_encoder_average_vectors_exception():
+    """Forces an exception in numpy matrix operations to cover line 24."""
+    # Passing incompatible shapes forces an exception in np.array or np.mean
+    broken_matrix = [[1.0], [1.0, 2.0, 3.0]]
+    assert BaseVectorEncoder.average_vectors(broken_matrix, limit=5) == []
+
+
+def test_default_encoder_empty_text():
+    """Verifies that empty or whitespace-only strings return an empty list immediately."""
+    assert DefaultVectorEncoder.text_to_vector("   ", "all-MiniLM-L6-v2") == []
+
+
+def test_default_encoder_missing_package(monkeypatch):
+    """Simulates sentence-transformers package missing and checks that _get_model raises ImportError."""
+    # Clear the internal model cache to force an import attempt
+    DefaultVectorEncoder._model_instances.clear()
+
+    # Temporarily hide sentence_transformers from sys.modules
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+
+    # Call _get_model directly, because text_to_vector swallows all Exceptions
+    with pytest.raises(ImportError):
+        DefaultVectorEncoder._get_model("some-model")
+
+
+@patch("django_neural_feed.encoders.logger")
+def test_default_encoder_successful_local_load(mock_logger):
+    """Simulates happy path where model is found locally (lines 41-46, 61-69)."""
+    DefaultVectorEncoder._model_instances.clear()
+
+    # Mock SentenceTransformer class and instance
+    mock_transformer_cls = MagicMock()
+    mock_instance = MagicMock()
+    mock_instance.encode.return_value = MagicMock(tolist=lambda: [0.1, 0.2, 0.3])
+    mock_transformer_cls.return_value = mock_instance
+
+    with patch.dict(
+        "sys.modules",
+        {"sentence_transformers": MagicMock(SentenceTransformer=mock_transformer_cls)},
+    ):
+        vector = DefaultVectorEncoder.text_to_vector("hello", "local-model")
+
+        assert vector == [0.1, 0.2, 0.3]
+        # Check if initialized with local_files_only=True
+        mock_transformer_cls.assert_called_with("local-model", local_files_only=True)
+
+
+@patch("django_neural_feed.encoders.logger")
+def test_default_encoder_fallback_download(mock_logger):
+    """Simulates fallback to downloading model when not found locally (lines 47-53)."""
+    DefaultVectorEncoder._model_instances.clear()
+
+    mock_transformer_cls = MagicMock()
+    # First call raises exception (not local), second call succeeds (download)
+    mock_transformer_cls.side_effect = [Exception("Not found locally"), MagicMock()]
+
+    with patch.dict(
+        "sys.modules",
+        {"sentence_transformers": MagicMock(SentenceTransformer=mock_transformer_cls)},
+    ):
+        # We don't care about encode result here, we are testing the instantiation logic
+        try:
+            DefaultVectorEncoder.text_to_vector("hello", "remote-model")
+        except Exception:
+            pass
+
+        # Ensure it attempted to download after local failure
+        assert mock_transformer_cls.call_count == 2
+        mock_transformer_cls.assert_any_call("remote-model", local_files_only=False)
+
+
+def test_default_encoder_encode_exception():
+    """Simulates runtime exception during encode call to cover lines 70-72."""
+    DefaultVectorEncoder._model_instances.clear()
+
+    mock_instance = MagicMock()
+    mock_instance.encode.side_effect = RuntimeError("GPU Out of memory")
+    mock_transformer_cls = MagicMock(return_value=mock_instance)
+
+    with patch.dict(
+        "sys.modules",
+        {"sentence_transformers": MagicMock(SentenceTransformer=mock_transformer_cls)},
+    ):
+        result = DefaultVectorEncoder.text_to_vector("hello", "error-model")
+        assert result == []
+
+
+def test_base_encoder_average_vectors_numpy_mean_exception(monkeypatch):
+    """Forces an exception explicitly inside np.mean to cover line 24 execution flow."""
+    # Pass a valid matrix so np.array succeeds, but break np.mean via monkeypatch
+    valid_vectors = [[1.0, 2.0], [3.0, 4.0]]
+
+    def mock_mean(*args, **kwargs):
+        raise RuntimeError("Simulated NumPy error")
+
+    monkeypatch.setattr(np, "mean", mock_mean)
+    assert BaseVectorEncoder.average_vectors(valid_vectors, limit=5) == []
+
+
+def test_default_encoder_get_model_caching_and_flow():
+    """Covers lines 39-57 by forcing both fresh initialization and cache hits."""
+    DefaultVectorEncoder._model_instances.clear()
+
+    mock_instance = MagicMock()
+    mock_instance.encode.return_value = MagicMock(tolist=lambda: [0.1, 0.2, 0.3])
+    mock_transformer_cls = MagicMock(return_value=mock_instance)
+
+    with patch.dict(
+        "sys.modules",
+        {"sentence_transformers": MagicMock(SentenceTransformer=mock_transformer_cls)},
+    ):
+        # 1. Fresh load (triggers the interior of 'if model_name not in cls._model_instances')
+        vec1 = DefaultVectorEncoder.text_to_vector("test1", "fresh-model")
+        assert vec1 == [0.1, 0.2, 0.3]
+        assert mock_transformer_cls.call_count == 1
+
+        # 2. Cache hit (skips the 'if' block interior, executes line 57 directly)
+        vec2 = DefaultVectorEncoder.text_to_vector("test2", "fresh-model")
+        assert vec2 == [0.1, 0.2, 0.3]
+        # Call count remains 1 because it took the instance from cache
+        assert mock_transformer_cls.call_count == 1
+
+
+@patch("django_neural_feed.encoders.logger")
+def test_default_encoder_fallback_download_flow(mock_logger):
+    """Covers lines 47-53 specifically focusing on local failure and download fallback."""
+    DefaultVectorEncoder._model_instances.clear()
+
+    mock_transformer_cls = MagicMock()
+    # First call fails (local files missing), second call succeeds (downloading)
+    mock_transformer_cls.side_effect = [Exception("Local missing"), MagicMock()]
+
+    with patch.dict(
+        "sys.modules",
+        {"sentence_transformers": MagicMock(SentenceTransformer=mock_transformer_cls)},
+    ):
+        # Trigger the fallback inside _get_model
+        model = DefaultVectorEncoder._get_model("download-model")
+        assert model is not None
+        assert mock_transformer_cls.call_count == 2

@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "USER_LIKES_LIMIT": 20,
     "CELERY_ENABLED": False,
     "ENCODER_CLASS": DefaultVectorEncoder,
+    "FEEDS": [],
 }
 
 
@@ -98,18 +99,10 @@ class AppSettings:
         return setting_value
 
     def get_registered_feeds(self) -> list:
-        """
-        Loads and returns configuration classes defined by user in Django settings.
-        Example in settings.py:
-        DJANGO_NEURAL_FEED = {
-            "FEEDS": ["apps.articles.feeds.MainArticlesFeed", "apps.shop.feeds.ProductsFeed"]
-        }
-        """
+        """Loads and returns configuration classes defined by user in Django settings."""
         from django.utils.module_loading import import_string
-        from django.conf import settings
 
-        dnf_settings = getattr(settings, "DJANGO_NEURAL_FEED", {})
-        feed_paths = dnf_settings.get("FEEDS", [])
+        feed_paths = self._get_setting("FEEDS") or []
 
         feed_classes = []
         for path in feed_paths:
