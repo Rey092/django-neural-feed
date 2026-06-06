@@ -183,34 +183,46 @@ def user_feed_view(request):
     return feed_queryset
 ```
 
-## **Configuration Reference**
+### **Configuration Reference**
 
-You can pass default global limits and model engine backends via standard DJANGO_NEURAL_FEED dictionary keys in your settings.py:
+You can pass default global limits and model engine backends via standard DJANGO\_NEURAL\_FEED dictionary keys in your settings.py:
 
 ```python  
-DJANGO_NEURAL_FEED = {  
-    "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",  
-    "VECTOR_DIMENSION": 384,  
-    "CELERY_ENABLED": True,  
-    "WEIGHT_SIMILARITY": 0.6,  
-    "WEIGHT_FRESHNESS": 0.2,  
-    "WEIGHT_POPULARITY": 0.2,  
+DJANGO\_NEURAL\_FEED \= {    
+    "MODEL\_NAME": "paraphrase-multilingual-MiniLM-L12-v2",    
+    "VECTOR\_DIMENSION": 384,    
+    "CELERY\_ENABLED": True,    
+    "WEIGHT\_SIMILARITY": 0.6,    
+    "WEIGHT\_FRESHNESS": 0.2,    
+    "WEIGHT\_POPULARITY": 0.2,    
 }
 ```
+
+| Global Config Key | Type | Default | Purpose |
+| :---- | :---- | :---- | :---- |
+| MODEL\_NAME | str | paraphrase-multilingual-MiniLM-L12-v2 | Target HuggingFace SentenceTransformer engine. |
+| VECTOR\_DIMENSION | int | 384 | Embedding dense matrix array dimension sizes. |
+| WEIGHT\_SIMILARITY | float | 0.6 | Default proportional weight of cosine similarity scoring. |
+| WEIGHT\_FRESHNESS | float | 0.2 | Default proportional weight of item creation recency. |
+| WEIGHT\_POPULARITY | float | 0.2 | Default proportional weight of user interaction counts. |
+| USER\_LIKES\_LIMIT | int | 20 | Max target sample size slice for vector aggregation. |
+| CELERY\_ENABLED | bool | False | Toggles routing tasks to background Celery workers. |
 
 ### **Advanced Settings Overriding**
 
 Every specific attribute can be declared dynamically within your custom BaseNeuralFeed class implementation to build separate configurations for multiple models (e.g., separate metrics weights for ArticlesFeed vs VideoFeed).
 
-| Config Key | Type | Default | Purpose |
+| Feed Class Attribute | Type | Default Value / Fallback | Purpose |
 | :---- | :---- | :---- | :---- |
-| MODEL_NAME | str | paraphrase-multilingual-MiniLM-L12-v2 | Target HuggingFace SentenceTransformer engine |
-| VECTOR_DIMENSION | int | 384 | Embedding dense matrix array dimension sizes |
-| WEIGHT_SIMILARITY | float | 0.6 | Proportional weight of cosine similarity scoring |
-| WEIGHT_FRESHNESS | float | 0.2 | Proportional weight of item creation recency |
-| WEIGHT_POPULARITY | float | 0.2 | Proportional weight of user interaction counts |
-| USER_LIKES_LIMIT | int | 20 | Max target sample size slice for vector aggregation |
-| CELERY_ENABLED | bool | False | Toggles routing tasks to background workers |
+| feed\_id | str | "default\_feed" | Unique identifier for partitioning user vector profiles. |
+| mode | str | *Required* ("m2m" | "model") | Toggles the internal signal tracking pipeline architecture. |
+| embedding\_model\_name | str | settings.MODEL\_NAME | Overrides the text-embedding engine for this specific feed. |
+| user\_likes\_limit | int | settings.USER\_LIKES\_LIMIT | Overrides the history interaction slice size for this feed. |
+| weight\_similarity | float | settings.WEIGHT\_SIMILARITY | Fine-tunes semantic similarity importance for this feed. |
+| weight\_freshness | float | settings.WEIGHT\_FRESHNESS | Fine-tunes time-decay metric importance for this feed. |
+| weight\_popularity | float | settings.WEIGHT\_POPULARITY | Fine-tunes interaction count importance for this feed. |
+| popularity\_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing popularity scoring. |
+| freshness\_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing time-decay scoring. |
 
 ## **Architecture Mechanics**
 
