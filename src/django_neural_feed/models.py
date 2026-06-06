@@ -12,7 +12,6 @@ class UserFeedProfile(models.Model):
     feed_id = models.CharField(max_length=64, db_index=True)
 
     embedding = VectorField(
-        dimensions=getattr(app_settings, "VECTOR_DIMENSION", 384),
         null=True,
         blank=True,
     )

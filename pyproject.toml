@@ -53,3 +53,8 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["django_neural_feed*"]
+
+[tool.coverage.run]
+omit = [
+    "*/migrations/*",
+]
