@@ -74,17 +74,17 @@ CREATE EXTENSION IF NOT EXISTS vector;
 Inherit from NeuralRecommendMixin to inject a vector embedding column into your target content table.
 
 ```Python  
+from django.conf import settings
 from django.db import models  
 from django_neural_feed.mixins import NeuralRecommendMixin
 
-class Post(NeuralRecommendMixin, models.Model): #NOTE: NeuralRecommendMixin should be BEFORE models.Model!
+class Post(NeuralRecommendMixin, models.Model): # NOTE: NeuralRecommendMixin must be BEFORE models.Model!
     title = models.CharField(max_length=255)  
     content = models.TextField()  
-    likes_count = models.PositiveIntegerField(default=0)  
     created_at = models.DateTimeField(auto_now_add=True)
+    likes = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="liked_posts")
 
     def get_ready_text(self) -> str:  
-        # Define text payload for vectorization  
         return f"{self.title} {self.content}"
 ```
 
@@ -100,23 +100,41 @@ python manage.py migrate
 Create a dedicated feeds.py configuration to encapsulate tracking thresholds, model fields, and weights.
 
 ```Python  
+from django.db.models import Count, F, FloatField, ExpressionWrapper, Value
+from django.db.models.functions import Cast, Log, Extract, Now
 from django_neural_feed.feeds import BaseNeuralFeed  
-from django.db.models import F
+from your_app.models import Post
 
 class PostFeed(BaseNeuralFeed):  
     feed_id = "posts_main"  
     user_likes_limit = 20  
+    
+    # Target models configuration
+    content_django_model = Post
+    interaction_django_model = Post.likes.through
       
-    # If you use Many2Many field for likes:
-    mode = "m2m"
+    # Interaction tracking configuration
+    mode = "m2m"               # Use "m2m" for ManyToMany fields, or "model" for explicit through models
+    user_field_name = "user"   # Target field pointing to User (not needed if mode is m2m)
+    content_field_name = "post" # Target field pointing to Content (not needed if mode is m2m)
 
-    # If you use though model for likes:
-    mode = "model"
-    user_field_name = "user"
-    content_field_name = "post"
+    # 1. Popularity: Logarithmic scaling to keep high-viral posts balanced (0.0 to 1.0+)
+    # Log(Value(1000.0)) sets the "ideal viral post" threshold at 1000 likes.
+    popularity_expression = ExpressionWrapper(
+        Log(Cast(Count("likes"), FloatField()) + Value(1.0)) / Log(Value(1000.0)),
+        output_field=FloatField()
+    )
 
-    # Define custom popularity scoring metrics  
-    # Will be added in readme soon...
+    # 2. Freshness: Time-decay function based on post age in hours.
+    # Formula: 1.0 / (1.0 + age_in_hours). Perfectly scales from 1.0 (just created) to 0.0 (old).
+    freshness_expression = ExpressionWrapper(
+        Value(1.0) / (
+            Value(1.0) + (
+                (Extract("epoch", Now()) - Extract("epoch", F("created_at"))) / 3600.0
+            )
+        ),
+        output_field=FloatField()
+    )
 ```
 
 ### **Step 3: Register Feed in Settings**
