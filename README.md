@@ -191,14 +191,15 @@ Every specific attribute can be declared dynamically within your custom BaseFeed
 
 1. **Content Structuring**: When an entity subclassing NeuralRecommendMixin fires a post_save execution block, DNF reads get_ready_text() to calculate a dense float vector.  
 2. **Preference Profiling**: On target connection updates, an isolated worker fetches the latest interaction history rows, calculates an averaged, L2-normalized mean representation vector, and updates UserFeedProfile.  
-3. **Query Engine Generation**: Invoking get_feed_for_user() applies pgvector operations combined with standard math normalization, avoiding redundant lookups.
+3. **Query Engine Generation**: Invoking Feed.get_feed() applies pgvector operations combined with standard math normalization, avoiding redundant lookups.
 
 ## **Testing**
 
 DNF maintains full code coverage execution metrics. Run the suite natively using:
 
-Bash  
+```Bash  
 pytest --cov=src/django_neural_feed
+```
 
 ## **License**
 
