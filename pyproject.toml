@@ -39,6 +39,16 @@ dependencies = [
 celery = [
     "celery>=5.3.0",
 ]
+dev = [
+    "black>=24.0.0",
+    "flake8>=7.0.0",
+    "pytest>=8.0.0",
+    "pytest-django>=4.8.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=5.0.0",
+    "psycopg2-binary>=2.9.0",
+    "celery>=5.3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
