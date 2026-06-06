@@ -33,7 +33,7 @@ With its object-oriented architecture, DNF decouples your configuration logic in
 - ****⚡ Bulletproof Asynchronous Pipeline****: Offload embedding generation and vector aggregation to Celery. Features an automated synchronous thread fallback system.  
 - ****📊 Dedicated Multi-Feed User Profiles****: Stores vector profiles in an isolated `UserFeedProfile` model partitioned by `feed_id`, keeping your core Auth User table clean.  
 - ****🎯 Hybrid Multi-Criteria Scoring****: Merges semantic similarity (pgvector cosine distance), content recency, and custom popularity expressions into a single database-level annotation.  
-- ****🚀 Zero-Migration Integration****: Seamlessly attach recommendation behavior to existing models using mixins.
+- ****🚀 Non-Invasive Integration****: Attach recommendation behavior to existing content models with minimal migrations, leaving your interaction tables (Likes/Dislikes) completely untouched.
 
 ## Requirements
 
@@ -97,7 +97,7 @@ python manage.py migrate
 
 ### **Step 2: Define a Custom Feed Class**
 
-Create a dedicated feed configuration to encapsulate tracking thresholds, model fields, and weights.
+Create a dedicated feeds.py configuration to encapsulate tracking thresholds, model fields, and weights.
 
 ```Python  
 from django_neural_feed.feeds import BaseFeed  
@@ -116,60 +116,54 @@ class PostFeed(BaseFeed):
         return F('likes_count') / 100.0
 ```
 
-### **Step 3: Connect Signals**
+### **Step 3: Register Feed in Settings**
 
-Register your interaction model (e.g., Like/Dislike) inside your application's apps.py configuration using your newly declared Feed class.
+Add the package tracking system to your INSTALLED_APPS and register the string path to your custom feed configuration within the DJANGO_NEURAL_FEED["FEEDS"] list inside settings.py.
 
-```Python  
-from django.apps import AppConfig
+```Python
+INSTALLED_APPS = [
+    # ... other apps
+    'django_neural_feed',
+]
 
-class YourAppConfig(AppConfig):  
-    name = 'your_app'  
-      
-    def ready(self):  
-        from django_neural_feed.signals import register_like_signal  
-        from .models import Like  
-        from .feeds import PostFeed  
-          
-        # Connect standard ForeignKey relation models  
-        register_like_signal(  
-            like_target=Like,  
-            mode='model',  
-            feed_class=PostFeed  
-        )
+DJANGO_NEURAL_FEED = {
+    "FEEDS": [
+        "your_app.feeds.PostFeed", # DNF hooks up all model and M2M signals automatically
+    ],
+}
 ```
 
-### **Step 4: Retrieve Personalized Feed Results**
+### **Step 4: Fetch Personalized Feed Results**
 
-Use the RecommendationService to obtain optimized querysets sorted by hybrid weights.
+Use the your feed's .get_feed function to obtain optimized querysets sorted by hybrid weights.
 
 ```Python  
-from django_neural_feed.services import RecommendationService  
-from .models import Post, Like
+from your_app.feeds import PostFeed
+from your_app.models import Post, Like
 
-def user_feed_view(request):  
-    # Gather explicitly disliked content IDs to exclude  
-    excluded_ids = Like.objects.filter(  
-        user=request.user,   
-        is_dislike=True  
-    ).values_list('post_id', flat=True)  
-      
-    # Query database using hybrid criteria annotations  
-    feed_queryset = RecommendationService.get_feed_for_user(  
-        user=request.user,  
-        queryset=Post.objects.all(),  
-        excluded_ids=excluded_ids,  
-        limit=20  
-    )  
+def user_feed_view(request):
+    # Gather explicitly disliked content IDs to exclude
+    excluded_ids = Like.objects.filter(
+        user=request.user, 
+        is_dislike=True
+    ).values_list('post_id', flat=True)
+    
+    # Generate personalized recommendations directly via your Feed class
+    feed_queryset = PostFeed.get_feed(
+        user=request.user,
+        queryset=Post.objects.all(),
+        excluded_ids=excluded_ids,
+        limit=20
+    )
     return feed_queryset
 ```
 
 ## **Configuration Reference**
 
-You can pass default global limits and model engine backends via standard DNF_CONFIG dictionary keys in your settings.py:
+You can pass default global limits and model engine backends via standard DJANGO_NEURAL_FEED dictionary keys in your settings.py:
 
 ```Python  
-DNF_CONFIG = {  
+DJANGO_NEURAL_FEED = {  
     "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",  
     "VECTOR_DIMENSION": 384,  
     "CELERY_ENABLED": True,  
