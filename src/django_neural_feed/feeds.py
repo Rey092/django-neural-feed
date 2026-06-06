@@ -2,6 +2,7 @@ import numpy as np
 from django.db.models import F, Value
 from django.db.models.functions import Coalesce
 from pgvector.django import MaxInnerProduct
+from typing import Literal
 
 from django_neural_feed.conf import app_settings
 
@@ -11,6 +12,7 @@ class BaseNeuralFeed:
     feed_id: str = "default_feed"
     content_django_model = None
     interaction_django_model = None
+    mode: Literal["model", "m2m"]
     user_field_name: str | None = None
     content_field_name: str | None = None
     parent_feed: type["BaseNeuralFeed"] | None = None

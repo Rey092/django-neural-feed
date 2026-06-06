@@ -29,7 +29,7 @@ With its object-oriented architecture, DNF decouples your configuration logic in
 
 ## Core Features
 
-- ****🧠 Object-Oriented Feed Configuration****: Define isolated, multi-tenant recommendation feeds by subclassing a unified `BaseFeed` class.  
+- ****🧠 Object-Oriented Feed Configuration****: Define isolated, multi-tenant recommendation feeds by subclassing a unified `BaseNeuralFeed` class.  
 - ****⚡ Bulletproof Asynchronous Pipeline****: Offload embedding generation and vector aggregation to Celery. Features an automated synchronous thread fallback system.  
 - ****📊 Dedicated Multi-Feed User Profiles****: Stores vector profiles in an isolated `UserFeedProfile` model partitioned by `feed_id`, keeping your core Auth User table clean.  
 - ****🎯 Hybrid Multi-Criteria Scoring****: Merges semantic similarity (pgvector cosine distance), content recency, and custom popularity expressions into a single database-level annotation.  
@@ -77,7 +77,7 @@ Inherit from NeuralRecommendMixin to inject a vector embedding column into your 
 from django.db import models  
 from django_neural_feed.mixins import NeuralRecommendMixin
 
-class Post(models.Model, NeuralRecommendMixin):  
+class Post(NeuralRecommendMixin, models.Model): #NOTE: NeuralRecommendMixin should be BEFORE models.Model!
     title = models.CharField(max_length=255)  
     content = models.TextField()  
     likes_count = models.PositiveIntegerField(default=0)  
@@ -100,20 +100,23 @@ python manage.py migrate
 Create a dedicated feeds.py configuration to encapsulate tracking thresholds, model fields, and weights.
 
 ```Python  
-from django_neural_feed.feeds import BaseFeed  
+from django_neural_feed.feeds import BaseNeuralFeed  
 from django.db.models import F
 
-class PostFeed(BaseFeed):  
+class PostFeed(BaseNeuralFeed):  
     feed_id = "posts_main"  
     user_likes_limit = 20  
       
-    # Optional: Omit to trigger automatic relation discovery  
-    user_field_name = "user"  
+    # If you use Many2Many field for likes:
+    mode = "m2m"
+
+    # If you use though model for likes:
+    mode = "model"
+    user_field_name = "user"
     content_field_name = "post"
 
     # Define custom popularity scoring metrics  
-    def get_popularity_expression(self):  
-        return F('likes_count') / 100.0
+    # Will be added in readme soon...
 ```
 
 ### **Step 3: Register Feed in Settings**
@@ -175,7 +178,7 @@ DJANGO_NEURAL_FEED = {
 
 ### **Advanced Settings Overriding**
 
-Every specific attribute can be declared dynamically within your custom BaseFeed class implementation to build separate configurations for multiple models (e.g., separate metrics weights for ArticlesFeed vs VideoFeed).
+Every specific attribute can be declared dynamically within your custom BaseNeuralFeed class implementation to build separate configurations for multiple models (e.g., separate metrics weights for ArticlesFeed vs VideoFeed).
 
 | Config Key | Type | Default | Purpose |
 | :---- | :---- | :---- | :---- |
