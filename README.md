@@ -23,26 +23,26 @@
 
 ## Overview
 
-****Django Neural Feed (DNF)**** is a production-ready Django application designed to build intelligent, personalized content feeds powered by semantic vector embeddings. It leverages PostgreSQL's `pgvector` extension to compute vector similarity at the database level, combined with customizable content freshness and popularity metrics—all evaluated in a single optimized SQL query.
+**Django Neural Feed (DNF)** is a production-ready Django application designed to build intelligent, personalized content feeds powered by semantic vector embeddings. It leverages PostgreSQL's `pgvector` extension to compute vector similarity at the database level, combined with customizable content freshness and popularity metrics—all evaluated in a single optimized SQL query.
 
 With its object-oriented architecture, DNF decouples your configuration logic into dedicated Feed classes. It tracks user interactions non-intrusively via Django signals and supports flexible deployment execution blocks, easily falling back from Celery asynchronous queues to synchronous background threads if the broker is offline.
 
 ## Core Features
 
-- ****🧠 Object-Oriented Feed Configuration****: Define isolated, multi-tenant recommendation feeds by subclassing a unified `BaseNeuralFeed` class.  
-- ****⚡ Bulletproof Asynchronous Pipeline****: Offload embedding generation and vector aggregation to Celery. Features an automated synchronous thread fallback system.  
-- ****📊 Dedicated Multi-Feed User Profiles****: Stores vector profiles in an isolated `UserFeedProfile` model partitioned by `feed_id`, keeping your core Auth User table clean.  
-- ****🎯 Hybrid Multi-Criteria Scoring****: Merges semantic similarity (pgvector cosine distance), content recency, and custom popularity expressions into a single database-level annotation.  
-- ****🚀 Non-Invasive Integration****: Attach recommendation behavior to existing content models with minimal migrations, leaving your interaction tables (Likes/Dislikes) completely untouched.
+- **🧠 Object-Oriented Feed Configuration**: Define isolated, multi-tenant recommendation feeds by subclassing a unified `BaseNeuralFeed` class.  
+- **⚡ Bulletproof Asynchronous Pipeline**: Offload embedding generation and vector aggregation to Celery. Features an automated synchronous thread fallback system.  
+- **📊 Dedicated Multi-Feed User Profiles**: Stores vector profiles in an isolated `UserFeedProfile` model partitioned by `feed_id`, keeping your core Auth User table clean.  
+- **🎯 Hybrid Multi-Criteria Scoring**: Merges semantic similarity (pgvector cosine distance), content recency, and custom popularity expressions into a single database-level annotation.  
+- **🚀 Non-Invasive Integration**: Attach recommendation behavior to existing content models with minimal migrations, leaving your interaction tables (Likes/Dislikes) completely untouched.
 
 ## Requirements
 
-- ****Python****: 3.10+  
-- ****Django****: 4.2, 5.0, 6.0+  
-- ****PostgreSQL****: 12+ (with `pgvector` extension installed)  
-- ****NumPy****: 2.0.0+  
-- ****pgvector****: 0.4.0+  
-- ****SentenceTransformers****: 3.0.0+
+- **Python**: 3.10+  
+- **Django**: 4.2, 5.0, 6.0+  
+- **PostgreSQL**: 12+ (with `pgvector` extension installed)  
+- **NumPy**: 2.0.0+  
+- **pgvector**: 0.4.0+  
+- **SentenceTransformers**: 3.0.0+
 
 ## Installation
 
@@ -53,7 +53,7 @@ pip install django-neural-feed
 ```
 ### **2. Add to Django Settings**
 
-```Python  
+```python  
 INSTALLED_APPS = [  
     # ... other apps  
     'django_neural_feed',  
@@ -63,7 +63,7 @@ INSTALLED_APPS = [
 
 Ensure pgvector is enabled in your database instance:
 
-```SQL  
+```sql  
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
@@ -73,7 +73,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 Inherit from NeuralRecommendMixin to inject a vector embedding column into your target content table.
 
-```Python  
+```python  
 from django.conf import settings
 from django.db import models  
 from django_neural_feed.mixins import NeuralRecommendMixin
@@ -90,47 +90,57 @@ class Post(NeuralRecommendMixin, models.Model): # NOTE: NeuralRecommendMixin mus
 
 Prepare and apply your migrations:
 
-```Bash  
+```bash  
 python manage.py makemigrations  
 python manage.py migrate
 ```
 
 ### **Step 2: Define a Custom Feed Class**
 
-Create a dedicated feeds.py configuration to encapsulate tracking thresholds, model fields, and weights.
+Create a dedicated `feeds.py` configuration to encapsulate tracking thresholds, model fields, math scoring expressions, and hybrid weights.
 
-```Python  
+```python 
 from django.db.models import Count, F, FloatField, ExpressionWrapper, Value
-from django.db.models.functions import Cast, Log, Extract, Now
+from django.db.models.functions import Cast, Ln, Extract, Now
 from django_neural_feed.feeds import BaseNeuralFeed  
 from your_app.models import Post
 
 class PostFeed(BaseNeuralFeed):  
+    # 1. Core Feed Identity
     feed_id = "posts_main"  
-    user_likes_limit = 20  
-    
-    # Target models configuration
+    parent_feed = None          # Optional: Reference to a parent feed class for inheritance hierarchy
+
+    # 2. Target Django Models Configuration
     content_django_model = Post
     interaction_django_model = Post.likes.through
-      
-    # Interaction tracking configuration
+    
+    # 3. Interaction Tracking Pipelines
     mode = "m2m"               # Use "m2m" for ManyToMany fields, or "model" for explicit through models
-    user_field_name = "user"   # Target field pointing to User (not needed if mode is m2m)
-    content_field_name = "post" # Target field pointing to Content (not needed if mode is m2m)
+    user_field_name = "user"   # Field pointing to User model (not needed if mode is "m2m")
+    content_field_name = "post" # Field pointing to Content model (not needed if mode is "m2m")
 
-    # 1. Popularity: Logarithmic scaling to keep high-viral posts balanced (0.0 to 1.0+)
-    # Log(Value(1000.0)) sets the "ideal viral post" threshold at 1000 likes.
+    # 4. Model & Pipeline Thresholds
+    embedding_model_name = "paraphrase-multilingual-MiniLM-L12-v2" # Overrides global setting
+    user_likes_limit = 20      # Max target sample size slice for vector profile aggregation
+
+    # 5. Hybrid Scoring Global Weights (Should ideally sum up to 1.0)
+    weight_similarity = 0.6
+    weight_freshness = 0.2
+    weight_popularity = 0.2
+
+    # 6. Popularity: Logarithmic scaling using natural logarithm to keep viral jumps balanced
+    # Ln(Value(1000.0)) scales the metric dynamically, hitting a 1.0 score modifier at 1000 likes.
     popularity_expression = ExpressionWrapper(
-        Log(Cast(Count("likes"), FloatField()) + Value(1.0)) / Log(Value(1000.0)),
+        Ln(Cast(Count("likes"), FloatField()) + Value(1.0)) / Ln(Value(1000.0)),
         output_field=FloatField()
     )
 
-    # 2. Freshness: Time-decay function based on post age in hours.
-    # Formula: 1.0 / (1.0 + age_in_hours). Perfectly scales from 1.0 (just created) to 0.0 (old).
+    # 7. Freshness: Time-decay function based on post age in hours
+    # Safely subtracts timestamps inside the database, converting the interval to hours.
     freshness_expression = ExpressionWrapper(
         Value(1.0) / (
             Value(1.0) + (
-                (Extract("epoch", Now()) - Extract("epoch", F("created_at"))) / 3600.0
+                Extract(Now() - F("created_at"), "epoch") / 3600.0
             )
         ),
         output_field=FloatField()
@@ -139,14 +149,9 @@ class PostFeed(BaseNeuralFeed):
 
 ### **Step 3: Register Feed in Settings**
 
-Add the package tracking system to your INSTALLED_APPS and register the string path to your custom feed configuration within the DJANGO_NEURAL_FEED["FEEDS"] list inside settings.py.
+Register the string path to your custom feed configuration within the `DJANGO_NEURAL_FEED["FEEDS"]` list inside your `settings.py`.
 
-```Python
-INSTALLED_APPS = [
-    # ... other apps
-    'django_neural_feed',
-]
-
+```python
 DJANGO_NEURAL_FEED = {
     "FEEDS": [
         "your_app.feeds.PostFeed", # DNF hooks up all model and M2M signals automatically
@@ -156,18 +161,17 @@ DJANGO_NEURAL_FEED = {
 
 ### **Step 4: Fetch Personalized Feed Results**
 
-Use the your feed's .get_feed function to obtain optimized querysets sorted by hybrid weights.
+Use your feed's `.get_feed()` function to obtain optimized querysets sorted by hybrid weights.
 
-```Python  
+```python  
 from your_app.feeds import PostFeed
-from your_app.models import Post, Like
+from your_app.models import Post
 
 def user_feed_view(request):
-    # Gather explicitly disliked content IDs to exclude
-    excluded_ids = Like.objects.filter(
-        user=request.user, 
-        is_dislike=True
-    ).values_list('post_id', flat=True)
+    # Gather IDs of posts the user has already liked to exclude them from the feed
+    excluded_ids = Post.objects.filter(
+        likes=request.user
+    ).values_list('id', flat=True)
     
     # Generate personalized recommendations directly via your Feed class
     feed_queryset = PostFeed.get_feed(
@@ -183,7 +187,7 @@ def user_feed_view(request):
 
 You can pass default global limits and model engine backends via standard DJANGO_NEURAL_FEED dictionary keys in your settings.py:
 
-```Python  
+```python  
 DJANGO_NEURAL_FEED = {  
     "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",  
     "VECTOR_DIMENSION": 384,  
@@ -218,7 +222,7 @@ Every specific attribute can be declared dynamically within your custom BaseNeur
 
 DNF maintains full code coverage execution metrics. Run the suite natively using:
 
-```Bash  
+```bash  
 pytest --cov=src/django_neural_feed
 ```
 
