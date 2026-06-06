@@ -16,15 +16,33 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='UserFeedProfile',
+            name="UserFeedProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('feed_id', models.CharField(db_index=True, max_length=64)),
-                ('embedding', pgvector.django.vector.VectorField(blank=True, null=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='feed_profiles', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("feed_id", models.CharField(db_index=True, max_length=64)),
+                (
+                    "embedding",
+                    pgvector.django.vector.VectorField(blank=True, null=True),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="feed_profiles",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'unique_together': {('user', 'feed_id')},
+                "unique_together": {("user", "feed_id")},
             },
         ),
     ]
