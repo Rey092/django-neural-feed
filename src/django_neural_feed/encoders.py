@@ -21,6 +21,9 @@ class BaseVectorEncoder:
             return []
         try:
             matrix = np.array(vectors[:limit], dtype=np.float32)
+            # Guard against empty mock structures or 0-size arrays
+            if matrix.size == 0:
+                return []
             return np.mean(matrix, axis=0).tolist()
         except Exception as e:
             logger.error(f"DNF Vector averaging failed: {e}")

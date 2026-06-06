@@ -15,7 +15,11 @@ class MockTestingEncoder:
 
     @classmethod
     def average_vectors(cls, vectors: list[list[float]], limit: int) -> list[float]:
-        arr = np.asarray(vectors, dtype=np.float32)
+        if not vectors:
+            return []
+        arr = np.asarray(vectors[:limit], dtype=np.float32)
+        if arr.size == 0:
+            return []
         mean = np.mean(arr, axis=0)
         norm = np.linalg.norm(mean)
         if norm > 0:

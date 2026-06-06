@@ -273,10 +273,13 @@ def test_run_synchronous_content_update_exception_handling():
 
 
 def test_run_synchronous_user_update_missing_embeddings_and_crashes():
-    """Covers line 229 empty sequence exit and lines 232-239 thread exception safety."""
-    # Line 229: Exit early when calculated vector collection returns empty results
+    """Covers empty sequence exit and thread exception safety inside fallback."""
+    # Part 1: Exit safely when calculated vector collection returns empty results
     with patch.object(BaseNeuralFeed, "calculate_user_embedding", return_value=None):
-        with patch("django_neural_feed.models.UserFeedProfile.objects.get_or_create"):
+        # Patch update_or_create because the new logic executes it to save None
+        with patch(
+            "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+        ) as mock_update:
             assert (
                 _run_synchronous_user_update(
                     user_id=1,
@@ -286,13 +289,19 @@ def test_run_synchronous_user_update_missing_embeddings_and_crashes():
                 )
                 is None
             )
+            # Ensure it accurately targeted the profile reset layout
+            mock_update.assert_called_once_with(
+                user_id=1, feed_id="test", defaults={"embedding": None}
+            )
 
-    # Lines 232-239: Intercept execution level crashes securely inside the background thread execution block
+    # Part 2: Intercept execution level crashes securely inside the background thread
+    # We mock update_or_create to throw an explicit exception and test resilience
     with patch(
-        "django_neural_feed.models.UserFeedProfile.objects.get_or_create"
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
     ) as mock_db:
         mock_db.side_effect = Exception("Thread internal operational failure")
-        # Function must intercept the error silently, log it safely, and release resources via finally block
+
+        # Function must intercept the error silently, log it safely, and exit cleanly
         _run_synchronous_user_update(
             user_id=1,
             sender_model=MagicMock(),
@@ -617,8 +626,10 @@ def test_run_synchronous_user_update_falsy_vector():
             feed_class=mock_feed,
             feed_id="test_feed",
         )
-        # Ensure it skipped to finally block without executing update
-        mock_profile_objs.update_or_create.assert_not_called()
+        # Ensure it explicitly saves None to database to wipe the profile
+        mock_profile_objs.update_or_create.assert_called_once_with(
+            user_id=42, feed_id="test_feed", defaults={"embedding": None}
+        )
 
 
 def test_run_synchronous_content_update_empty_text():

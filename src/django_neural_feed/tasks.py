@@ -81,14 +81,16 @@ def update_user_embedding_task(
             .values_list(f"{prefix}embedding", flat=True)
         )
 
-        if not recent_emb:
-            return
-
         # Generate average vector using the configured encoder
         encoder = app_settings.ENCODER_CLASS
         vector = encoder.average_vectors(recent_emb, user_likes_limit)
 
-        if vector:
+        # If vector is empty (user has 0 likes), we either clear the profile or set it to None
+        if not vector:
+            UserFeedProfile.objects.update_or_create(
+                user_id=user_id, feed_id=feed_id, defaults={"embedding": None}
+            )
+        else:  # If vector is not empty, we do main job
             UserFeedProfile.objects.update_or_create(
                 user_id=user_id, feed_id=feed_id, defaults={"embedding": vector}
             )

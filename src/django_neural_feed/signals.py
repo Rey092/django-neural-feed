@@ -225,11 +225,14 @@ def _run_synchronous_user_update(*, user_id, sender_model, feed_class, feed_id):
             .values_list(f"{prefix}embedding", flat=True)
         )
 
-        if not recent_emb:
-            return
-
         vector = encoder.average_vectors(recent_emb, limit)
-        if vector:
+
+        # If vector is empty (user has 0 likes), we either clear the profile or set it to None
+        if not vector:
+            UserFeedProfile.objects.update_or_create(
+                user_id=user_id, feed_id=feed_id, defaults={"embedding": None}
+            )
+        else:  # If vector is not empty, we doing main job
             UserFeedProfile.objects.update_or_create(
                 user_id=user_id, feed_id=feed_id, defaults={"embedding": vector}
             )

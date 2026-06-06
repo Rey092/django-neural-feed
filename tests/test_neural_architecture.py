@@ -404,6 +404,18 @@ def test_default_encoder_fallback_download_flow(mock_logger):
         assert mock_transformer_cls.call_count == 2
 
 
+def test_base_vector_encoder_average_empty_nested_matrix():
+    """Covers line 26: returns empty list if numpy array evaluates to 0 size."""
+    from django_neural_feed.encoders import BaseVectorEncoder
+
+    # Pass a truthy nested collection that results in an empty numpy structure
+    falsy_nested_vectors = [[]]
+
+    result = BaseVectorEncoder.average_vectors(falsy_nested_vectors, limit=5)
+
+    assert result == []
+
+
 def test_get_model_from_path_malformed():
     # Missing dot triggers split exception
     assert get_model_from_path("InvalidModelPathNoDot") is None
@@ -451,7 +463,7 @@ def test_update_user_embedding_task_user_not_found(mock_get_model):
 
 @patch("django_neural_feed.tasks.apps.get_model")
 def test_update_user_embedding_task_no_embeddings(mock_get_model):
-    """Covers line 85: Early return if user has no likes containing embeddings."""
+    """Covers edge case when user has no likes, forcing profile cleanup with None."""
     mock_user_model = MagicMock()
     mock_user_model.objects.filter.return_value.exists.return_value = True
 
@@ -463,16 +475,25 @@ def test_update_user_embedding_task_no_embeddings(mock_get_model):
 
     mock_get_model.side_effect = [mock_likes_model, mock_user_model]
 
-    result = update_user_embedding_task(
-        likes_django_model_path="tests.TestLike",
-        users_django_model_path="auth.User",
-        user_id=1,
-        user_field_name="user",
-        content_field_name="article",
-        feed_id="test_feed",
-        user_likes_limit=5,
-    )
-    assert result is None
+    # Patch the database layer to avoid IntegrityError due to missing Foreign Key
+    with patch(
+        "django_neural_feed.models.UserFeedProfile.objects.update_or_create"
+    ) as mock_update:
+        result = update_user_embedding_task(
+            likes_django_model_path="tests.TestLike",
+            users_django_model_path="auth.User",
+            user_id=1,
+            user_field_name="user",
+            content_field_name="article",
+            feed_id="test_feed",
+            user_likes_limit=5,
+        )
+
+        assert result is None
+        # Verify that it safely tried to clear the stale profile in the DB
+        mock_update.assert_called_once_with(
+            user_id=1, feed_id="test_feed", defaults={"embedding": None}
+        )
 
 
 @patch("django_neural_feed.tasks.apps.get_model")
@@ -656,8 +677,11 @@ def test_update_user_embedding_task_skip_empty_vector_flow(mock_get_model, monke
             feed_id="test_feed",
             user_likes_limit=5,
         )
-        # Now update_or_create MUST be skipped because the computed vector evaluates to False
-        assert mock_update_skip.call_count == 0
+        # The update_or_create must execute to clear the stale user profile
+        assert mock_update_skip.call_count == 1
+        mock_update_skip.assert_called_once_with(
+            user_id=1, feed_id="test_feed", defaults={"embedding": None}
+        )
 
 
 @patch("django_neural_feed.tasks.apps.get_model")
