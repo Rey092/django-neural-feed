@@ -185,28 +185,29 @@ def user_feed_view(request):
 
 ### **Configuration Reference**
 
-You can pass default global limits and model engine backends via standard DJANGO\_NEURAL\_FEED dictionary keys in your settings.py:
+You can pass default global limits and model engine backends via standard DJANGO_NEURAL_FEED dictionary keys in your settings.py:
 
 ```python  
-DJANGO\_NEURAL\_FEED \= {    
-    "MODEL\_NAME": "paraphrase-multilingual-MiniLM-L12-v2",    
-    "VECTOR\_DIMENSION": 384,    
-    "CELERY\_ENABLED": True,    
-    "WEIGHT\_SIMILARITY": 0.6,    
-    "WEIGHT\_FRESHNESS": 0.2,    
-    "WEIGHT\_POPULARITY": 0.2,    
+DJANGO_NEURAL_FEED = {    
+    "MODEL_NAME": "paraphrase-multilingual-MiniLM-L12-v2",    
+    "VECTOR_DIMENSION": 384,    
+    "CELERY_ENABLED": True,    
+    "WEIGHT_SIMILARITY": 0.6,    
+    "WEIGHT_FRESHNESS": 0.2,    
+    "WEIGHT_POPULARITY": 0.2,    
 }
 ```
 
 | Global Config Key | Type | Default | Purpose |
 | :---- | :---- | :---- | :---- |
-| MODEL\_NAME | str | paraphrase-multilingual-MiniLM-L12-v2 | Target HuggingFace SentenceTransformer engine. |
-| VECTOR\_DIMENSION | int | 384 | Embedding dense matrix array dimension sizes. |
-| WEIGHT\_SIMILARITY | float | 0.6 | Default proportional weight of cosine similarity scoring. |
-| WEIGHT\_FRESHNESS | float | 0.2 | Default proportional weight of item creation recency. |
-| WEIGHT\_POPULARITY | float | 0.2 | Default proportional weight of user interaction counts. |
-| USER\_LIKES\_LIMIT | int | 20 | Max target sample size slice for vector aggregation. |
-| CELERY\_ENABLED | bool | False | Toggles routing tasks to background Celery workers. |
+| MODEL_NAME | str | paraphrase-multilingual-MiniLM-L12-v2 | Target HuggingFace SentenceTransformer engine. |
+| VECTOR_DIMENSION | int | 384 | Embedding dense matrix array dimension sizes. |
+| ENCODER_CLASS | str/type | django_neural_feed.encoders.DefaultVectorEncoder | Path to the vectorization engine class interface. |
+| WEIGHT_SIMILARITY | float | 0.6 | Default proportional weight of cosine similarity scoring. |
+| WEIGHT_FRESHNESS | float | 0.2 | Default proportional weight of item creation recency. |
+| WEIGHT_POPULARITY | float | 0.2 | Default proportional weight of user interaction counts. |
+| USER_LIKES_LIMIT | int | 20 | Max target sample size slice for vector aggregation. |
+| CELERY_ENABLED | bool | False | Toggles routing tasks to background Celery workers. |
 
 ### **Advanced Settings Overriding**
 
@@ -214,21 +215,61 @@ Every specific attribute can be declared dynamically within your custom BaseNeur
 
 | Feed Class Attribute | Type | Default Value / Fallback | Purpose |
 | :---- | :---- | :---- | :---- |
-| feed\_id | str | "default\_feed" | Unique identifier for partitioning user vector profiles. |
+| feed_id | str | "default_feed" | Unique identifier for partitioning user vector profiles. |
 | mode | str | *Required* ("m2m" | "model") | Toggles the internal signal tracking pipeline architecture. |
-| embedding\_model\_name | str | settings.MODEL\_NAME | Overrides the text-embedding engine for this specific feed. |
-| user\_likes\_limit | int | settings.USER\_LIKES\_LIMIT | Overrides the history interaction slice size for this feed. |
-| weight\_similarity | float | settings.WEIGHT\_SIMILARITY | Fine-tunes semantic similarity importance for this feed. |
-| weight\_freshness | float | settings.WEIGHT\_FRESHNESS | Fine-tunes time-decay metric importance for this feed. |
-| weight\_popularity | float | settings.WEIGHT\_POPULARITY | Fine-tunes interaction count importance for this feed. |
-| popularity\_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing popularity scoring. |
-| freshness\_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing time-decay scoring. |
+| embedding_model_name | str | settings.MODEL_NAME | Overrides the text-embedding engine for this specific feed. |
+| user_likes_limit | int | settings.USER_LIKES_LIMIT | Overrides the history interaction slice size for this feed. |
+| weight_similarity | float | settings.WEIGHT_SIMILARITY | Fine-tunes semantic similarity importance for this feed. |
+| weight_freshness | float | settings.WEIGHT_FRESHNESS | Fine-tunes time-decay metric importance for this feed. |
+| weight_popularity | float | settings.WEIGHT_POPULARITY | Fine-tunes interaction count importance for this feed. |
+| popularity_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing popularity scoring. |
+| freshness_expression | Expression | Value(1.0) | Custom Django ORM expression for parsing time-decay scoring. |
 
 ## **Architecture Mechanics**
 
 1. **Content Structuring**: When an entity subclassing NeuralRecommendMixin fires a post_save execution block, DNF reads get_ready_text() to calculate a dense float vector.  
 2. **Preference Profiling**: On target connection updates, an isolated worker fetches the latest interaction history rows, calculates an averaged, L2-normalized mean representation vector, and updates UserFeedProfile.  
 3. **Query Engine Generation**: Invoking Feed.get_feed() applies pgvector operations combined with standard math normalization, avoiding redundant lookups.
+
+## **Custom Vector Encoders (Advanced)**
+
+By default, DNF uses local `sentence-transformers` via `DefaultVectorEncoder`. If you prefer to use external cloud APIs (like OpenAI, Cohere, or custom microservices) for generating embeddings, you can implement a custom encoder.
+
+### 1. Subclass BaseVectorEncoder
+
+Create a custom encoder class anywhere in your Django project and implement the text_to_vector method. You can optionally override average_vectors if you want to replace NumPy-based processing.
+
+```python
+import requests
+from django_neural_feed.encoders import BaseVectorEncoder
+
+class OpenAIAppEncoder(BaseVectorEncoder):
+    @classmethod
+    def text_to_vector(cls, text: str, model_name: str) -> list[float]:
+        """Fetch embeddings via custom third-party cloud API endpoint."""
+        if not text.strip():
+            return []
+            
+        # Example API execution blueprint
+        response = requests.post(
+            "https://api.openai.com/v1/embeddings",
+            headers={"Authorization": "Bearer YOUR_API_KEY"},
+            json={"input": text, "model": model_name}
+        )
+        return response.json()["data"][0]["embedding"]
+```
+
+### 2. Register Custom Encoder in Settings
+
+Pass the absolute string path pointing to your class implementation inside the global dictionary configuration:
+
+```python
+DJANGO_NEURAL_FEED = {
+    "ENCODER_CLASS": "your_app.encoders.OpenAIAppEncoder",
+    "MODEL_NAME": "text-embedding-3-small", # Passed down as model_name argument
+    "VECTOR_DIMENSION": 1536,                # Adjust to match your custom API provider
+}
+```
 
 ## **Testing**
 
