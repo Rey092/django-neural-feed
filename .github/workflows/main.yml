@@ -90,6 +90,11 @@ jobs:
 
           uv pip install -e '.[celery, dev]'
 
+      - name: Enable pgvector in template database
+        run: |
+          PGPASSWORD=mysecretpassword psql -h localhost -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=mysecretpassword psql -h localhost -U postgres -d template1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
       - name: Run tests
         run: |
           .venv/bin/pytest --cov=django_neural_feed --cov-report=term-missing --cov-branch
