@@ -28,17 +28,3 @@ class NeuralRecommendMixin(models.Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._original_text = self.get_ready_text() if self.pk else None
-
-
-class NeuralUserMixin(models.Model):
-    """
-    Abstract mixin for the User model to store the aggregated
-    interest profile vector.
-    """
-
-    user_embedding = VectorField(
-        dimensions=app_settings.VECTOR_DIMENSION, null=True, blank=True
-    )
-
-    class Meta:
-        abstract = True
