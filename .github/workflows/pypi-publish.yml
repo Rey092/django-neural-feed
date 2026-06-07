@@ -1,0 +1,83 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers workflow only on version tags
+
+env:
+  UV_TORCH_BACKEND: cpu
+
+jobs:
+  test:
+    name: Final Verification Test
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: django_neural_feed_test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: mysecretpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: tests.settings
+      DATABASE_HOST: localhost
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: django_neural_feed_test_db
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: mysecretpassword
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        env:
+          UV_INDEX_URL: https://download.pytorch.org/whl/cpu
+          UV_EXTRA_INDEX_URL: https://pypi.org/simple
+        run: |
+          uv pip install torch "django>=5.0"
+          uv pip install -e '.[celery, dev]'
+
+      - name: Enable pgvector in template database
+        run: |
+          PGPASSWORD=mysecretpassword psql -h localhost -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          PGPASSWORD=mysecretpassword psql -h localhost -U postgres -d template1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Run tests
+        run: .venv/bin/pytest --cov=django_neural_feed
+
+  publish:
+    name: Build and Publish to PyPI
+    needs: test # Block deployment if 100% coverage suite breaks
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for secure OIDC Trusted Publisher authentication
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build package distribution artifacts
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
