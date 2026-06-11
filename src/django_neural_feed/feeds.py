@@ -5,6 +5,11 @@ from pgvector.django import MaxInnerProduct
 from typing import Literal
 
 from django_neural_feed.conf import app_settings
+from django_neural_feed.models import UserFeedProfile
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseNeuralFeed:
@@ -87,8 +92,6 @@ class BaseNeuralFeed:
         if user is None or not user.is_authenticated:
             return None
 
-        from django_neural_feed.models import UserFeedProfile
-
         target_feed_id = cls.get_setting("feed_id")
 
         if not target_feed_id:
@@ -102,11 +105,66 @@ class BaseNeuralFeed:
             return profile.embedding if profile else None
 
         except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(
                 f"DNF: Error fetching user vector for feed '{target_feed_id}': {e}"
+            )
+            return None
+
+    @classmethod
+    def set_user_vector(
+        cls, user, *, embedding=None, keywords=None
+    ) -> tuple["UserFeedProfile", bool] | None:
+        """Changes user vector to provided embedding or specific keywords."""
+
+        if user is None or not user.is_authenticated:
+            return None
+
+        if embedding is not None and keywords is not None:
+            raise ValueError(
+                "DNF: Cannot set user vector using both 'embedding' and 'keywords' simultaneously. "
+                "Provide only one of them."
+            )
+
+        if embedding is None and keywords is None:
+            raise ValueError(
+                "DNF: Neither 'embedding' nor 'keywords' was provided. "
+                "You must supply at least one argument to set the user vector."
+            )
+
+        target_feed_id = cls.get_setting("feed_id")
+        if not target_feed_id:
+            return None
+
+        # If keywords provided, calculate embedding based on its type
+        if keywords is not None:
+            if isinstance(keywords, list):
+                # Ensure all elements in the list are strings
+                if not all(isinstance(k, str) for k in keywords):
+                    raise ValueError(
+                        "DNF: All elements in 'keywords' list must be strings."
+                    )
+
+                embedding = cls.calculate_embedding(" ".join(keywords))
+            elif isinstance(keywords, str):
+                embedding = cls.calculate_embedding(keywords)
+            else:
+                raise ValueError(
+                    f"DNF: Invalid type for 'keywords'. Expected list[str] or str, got {type(keywords).__name__}."
+                )
+
+        try:
+            if embedding is None:
+                return None
+
+            return UserFeedProfile.objects.update_or_create(
+                user_id=user.id,
+                feed_id=target_feed_id,
+                defaults={"embedding": embedding},
+            )
+
+        except Exception as e:
+            logger.error(
+                f"DNF: Error saving user vector for feed '{target_feed_id}': {e}"
             )
             return None
 
