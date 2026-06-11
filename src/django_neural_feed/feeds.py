@@ -145,9 +145,6 @@ class BaseNeuralFeed:
 
         user_profile_vector = cls.get_user_vector(user)
 
-        if user_profile_vector is None:
-            return candidates_qs.order_by("-id")[:limit]
-
         ranked_qs = cls.rank_candidates(candidates_qs, user_profile_vector)
 
         return ranked_qs[:limit]
